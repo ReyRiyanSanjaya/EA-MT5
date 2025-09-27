@@ -88,82 +88,114 @@ SignalInfo Signals[];
 int SignalCount=0;
 
 //==================================================================
-// Fungsi: SendTelegramMessage
-// Deskripsi: Kirim pesan ke Telegram Bot via WebRequest
+// Fungsi: SendTelegramPhoto
+// Deskripsi: Kirim screenshot chart ke Telegram
 //==================================================================
-void SendTelegramMessage(string text)
+void SendTelegramPhoto(string filePath, string caption="")
 {
-    string url = StringFormat("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
-                              TelegramBotToken, TelegramChatID, text);
+    string url = StringFormat("https://api.telegram.org/bot%s/sendPhoto?chat_id=%s", 
+                              TelegramBotToken, TelegramChatID);
+    
+    // Telegram API versi sederhana: kirim file dari folder MQL5/Files
+    // File harus ada di terminal path /MQL5/Files/
+    string fileName = StringSubstr(filePath, StringFind(filePath,"/Files/")+7);
+    string fullUrl = url+"&caption="+caption+"&photo=@"+fileName;
+    
     char result[];
-    int res = WebRequest("GET", url, "", NULL, 0, result, NULL);
-    if(res<=0) Print("Telegram send failed: ", GetLastError());
+    int res = WebRequest("GET", fullUrl, "", NULL, 0, result, NULL);
+    if(res<=0) Print("Telegram photo send failed: ", GetLastError());
 }
 
 //==================================================================
-// Fungsi: UpdateSignal
-// Deskripsi: Menambahkan atau memperbarui sinyal chart, alert, dan Telegram
+// Fungsi: UpdateSignalsVoting_CombinedScreenshot_Rapih
+// Deskripsi: Update semua sinyal, kirim full report + 1 screenshot gabungan STRONG
+// Posisi label STRONG diatur rapi agar screenshot jelas
 //==================================================================
-void UpdateSignal(SignalInfo sig, bool sendTelegram=true)
+void UpdateSignalsVoting_CombinedScreenshot_Rapih(bool sendTelegram=true)
 {
-    color col=clrWhite;
-    switch(sig.strength)
-    {
-        case WEAK:   col=clrYellow; break;
-        case MEDIUM: col=clrOrange; break;
-        case STRONG: col=clrGreen; break;
-    }
+    if(SignalCount==0) return;
 
-    string txt=StringFormat("%s\nLot: %.2f\nSL: %.5f\nTP: %.5f",
-                            (sig.signal==DIR_BUY?"BUY":(sig.signal==DIR_SELL?"SELL":"NONE")),
-                            sig.lot,sig.sl,sig.tp);
-
-    // Cari index sinyal di array
-    int idx=-1;
+    // Hitung voting BUY / SELL
+    int countBuy=0, countSell=0;
     for(int i=0;i<SignalCount;i++)
-        if(Signals[i].name==sig.name) { idx=i; break; }
-
-    if(idx==-1) // Sinyal baru
     {
-        ArrayResize(Signals,SignalCount+1);
-        Signals[SignalCount]=sig;
-        idx=SignalCount;
-        SignalCount++;
+        if(Signals[i].signal==DIR_BUY) countBuy++;
+        else if(Signals[i].signal==DIR_SELL) countSell++;
     }
-    else // update
-        Signals[idx]=sig;
+    Dir votedSignal = (countBuy >= countSell ? DIR_BUY : DIR_SELL);
+    string voteText = (votedSignal==DIR_BUY ? "🚀 BUY" : (votedSignal==DIR_SELL ? "🔻 SELL" : "⏹️ NONE"));
 
-    // Hapus objek lama jika ada
-    if(ObjectFind(0,sig.name)>=0)
-        ObjectDelete(0,sig.name);
+    // Siapkan pesan Telegram
+    string txt = "*📊 Signal Full Report (Voting Result: "+voteText+")*\n\n";
 
-    // Buat label chart
-    if(sig.signal!=DIR_NONE)
-    {
-        ObjectCreate(0,sig.name,OBJ_LABEL,0,0,0);
-        ObjectSetInteger(0,sig.name,OBJPROP_XDISTANCE,20+idx*150);
-        ObjectSetInteger(0,sig.name,OBJPROP_YDISTANCE,20);
-        ObjectSetInteger(0,sig.name,OBJPROP_COLOR,col);
-        ObjectSetInteger(0,sig.name,OBJPROP_FONTSIZE,12);
-        ObjectSetString(0,sig.name,OBJPROP_TEXT,txt);
+    // Array untuk label STRONG
+    string strongLabels[]; int strongCount=0;
 
-        // Alert pop-up
-        Alert("Signal: ", txt);
+    // Posisi label STRONG di chart
+    int xBase = 20;
+    int yBase = 20;
+    int xStep = 200; // jarak horizontal antar label
+    int yStep = 50;  // jarak vertikal antar label jika lebih dari 5 STRONG
 
-        // Kirim Telegram
-        if(sendTelegram) SendTelegramMessage(txt);
-    }
-}
+    int row=0, col=0;
 
-//==================================================================
-// Fungsi: ClearAllSignals
-// Deskripsi: Hapus semua label chart dan reset array
-//==================================================================
-void ClearAllSignals()
-{
     for(int i=0;i<SignalCount;i++)
-        if(ObjectFind(0,Signals[i].name)>=0)
-            ObjectDelete(0,Signals[i].name);
-    ArrayFree(Signals);
-    SignalCount=0;
+    {
+        SignalInfo sig = Signals[i];
+
+        // Emoji hanya untuk Signal & Strength
+        string signalEmoji = (sig.signal==DIR_BUY ? "🚀 BUY" : (sig.signal==DIR_SELL ? "🔻 SELL" : "⏹️ NONE"));
+        string strengthEmoji = (sig.strength==STRONG ? "🟢 Strong" : (sig.strength==MEDIUM ? "🟠 Medium" : "⚪ Weak"));
+        string votedTag = (sig.signal==votedSignal ? " [VOTED]" : "");
+
+        // Tambahkan ke pesan Telegram
+        txt += StringFormat("%d️⃣ Name: %s\nSignal: %s%s\nStrength: %s\nLot: %.2f\nSL: %.5f\nTP: %.5f\n\n",
+                            i+1, sig.name, signalEmoji, votedTag, strengthEmoji, sig.lot, sig.sl, sig.tp);
+
+        // Tentukan warna label
+        color colColor = clrWhite;
+        switch(sig.strength) { case WEAK: colColor=clrYellow; break; case MEDIUM: colColor=clrOrange; break; case STRONG: colColor=clrGreen; break; }
+
+        // Hapus label lama jika ada
+        if(ObjectFind(0,sig.name)>=0) ObjectDelete(0,sig.name);
+
+        // Buat label chart
+        if(sig.signal!=DIR_NONE)
+        {
+            ObjectCreate(0,sig.name,OBJ_LABEL,0,0,0);
+            int xPos=xBase + col*xStep;
+            int yPos=yBase + row*yStep;
+            ObjectSetInteger(0,sig.name,OBJPROP_XDISTANCE,xPos);
+            ObjectSetInteger(0,sig.name,OBJPROP_YDISTANCE,yPos);
+            ObjectSetInteger(0,sig.name,OBJPROP_COLOR,colColor);
+            ObjectSetInteger(0,sig.name,OBJPROP_FONTSIZE,12);
+            ObjectSetString(0,sig.name,OBJPROP_TEXT,StringFormat("%s %.2f Lot", (sig.signal==DIR_BUY?"BUY":"SELL"), sig.lot));
+
+            // Hanya simpan STRONG untuk screenshot gabungan
+            if(sig.strength==STRONG)
+            {
+                ArrayResize(strongLabels,strongCount+1);
+                strongLabels[strongCount] = sig.name;
+                strongCount++;
+
+                // Atur posisi rapi: max 5 label per baris
+                col++;
+                if(col>=5) { col=0; row++; }
+            }
+        }
+    }
+
+    // Kirim screenshot gabungan STRONG jika ada
+    if(strongCount>0)
+    {
+        string screenshotPath = "MQL5/Files/StrongSignalsCombined.png";
+        ChartScreenShot(0, screenshotPath, 1024, 768);
+        SendTelegramPhoto(screenshotPath, "📊 Strong Signals Combined Chart");
+    }
+
+    // Kirim Telegram full report
+    if(sendTelegram) SendTelegramMessage(txt);
+
+    // Alert pop-up
+    Alert("Signal Voting Report with combined STRONG screenshot sent to Telegram.");
 }

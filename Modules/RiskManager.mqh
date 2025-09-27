@@ -1,137 +1,99 @@
 //==================================================================
 // RiskManager.mqh
-// Versi: 1.0
-// Author: Rey Riyan Sanjaya
-// Deskripsi:
-//   Library manajemen risiko untuk MT5
-//   - Menghitung ukuran lot berdasarkan risiko account
-//   - Menghitung Stop Loss (SL) dan Take Profit (TP) otomatis
-//   - Bisa digunakan untuk scalping, swing, news trading
+//
+// 📌 TUJUAN:
+// - Mengatur manajemen risiko agar tidak MC.
+// - Hitung lot dinamis berdasarkan confidence, balance, dan free margin.
+// - Cek margin call level broker sebelum entry.
+// - Tambah proteksi drawdown, spread, dan slippage.
+//
 //==================================================================
-
-
-/*
-===================== PANDUAN PENGGUNAAN =======================
-
-1. Include library di EA:
-   #include "RiskManager.mqh"
-
-2. Contoh menghitung lot dengan risiko 1% dan SL 20 pip:
-   double lot = CalculateRiskLot(1.0,20);
-
-3. Contoh menghitung SL dan TP dengan RR 2:
-   double sl,tp;
-   CalculateSLTP(DIR_BUY,Ask,20,2,sl,tp);
-
-4. Contoh menggunakan ApplyRiskManagement untuk integrasi:
-   NISignalRisk risk = ApplyRiskManagement(DIR_BUY,Ask,20,2,1.0);
-   // hasil: risk.lot, risk.sl, risk.tp
-
-5. Integrasi dengan TradeExecutor.mqh:
-   NISignalRisk risk = ApplyRiskManagement(DIR_BUY,Ask,20,2,1.0);
-   OpenTrade(DIR_BUY,risk.lot,risk.sl,risk.tp,"Scalping");
-
-==================================================================*/
-
 #pragma once
 
-//==================================================================
-// ENUM arah posisi
-//==================================================================
-enum Dir
+namespace RiskManager
 {
-    DIR_NONE,
-    DIR_BUY,
-    DIR_SELL
-};
+   // --- Konfigurasi dasar ---
+   double baseLot    = 0.1;    // minimal lot
+   double maxLot     = 1.0;    // maksimal lot
+   double riskPercent= 1.0;    // risiko per trade (% balance)
+   double maxDDaily  = 10.0;   // max loss harian (% equity)
+   double maxSpread  = 30;     // max spread (point)
+   double slippage   = 3;      // max slippage (point)
+   double minMarginLevel = 200; // minimal margin level (%) aman untuk entry
 
-//==================================================================
-// Fungsi: CalculateRiskLot
-// Deskripsi: Menghitung ukuran lot berdasarkan risiko account
-// Parameter:
-//   riskPercent  = persentase risiko dari saldo (misal 1%)
-//   stopLossPips = jarak SL dalam pip
-// Return:
-//   lot yang aman untuk trade
-//==================================================================
-double CalculateRiskLot(double riskPercent, double stopLossPips)
-{
-    double balance = AccountInfoDouble(ACCOUNT_BALANCE);          // saldo account
-    double riskAmount = balance * riskPercent / 100.0;           // uang yang berisiko
-    double tickValue  = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE); // nilai tick
-    double tickSize   = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);  // ukuran tick
-    double lot       = riskAmount / ((stopLossPips * tickValue / tickSize));
+   // --- Hitung balance, equity, margin ---
+   double GetBalance() { return AccountInfoDouble(ACCOUNT_BALANCE); }
+   double GetEquity()  { return AccountInfoDouble(ACCOUNT_EQUITY); }
+   double GetFreeMargin() { return AccountInfoDouble(ACCOUNT_FREEMARGIN); }
+   double GetMarginLevel() { return AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); }
 
-    // Sesuaikan dengan minimum/maksimum lot broker
-    double lotStep = SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
-    double lotMin  = SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
-    double lotMax  = SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   // --- Hitung nilai 1 pip ---
+   double GetPipValue(string symbol=NULL)
+   {
+      if(symbol==NULL) symbol = _Symbol;
+      return SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   }
 
-    lot = MathMax(lot,lotMin);
-    lot = MathMin(lot,lotMax);
-    lot = MathFloor(lot/lotStep)*lotStep;
+   // --- Hitung lot berdasarkan risk% dan SL (dalam pips) ---
+   double CalculateLotByRisk(double stopLossPips, string symbol=NULL)
+   {
+      if(symbol==NULL) symbol = _Symbol;
+      double balance   = GetBalance();
+      double riskMoney = balance * (riskPercent/100.0);
+      double pipValue  = GetPipValue(symbol);
+      if(pipValue<=0) pipValue=0.0001;
 
-    return lot;
+      double lot = riskMoney / (stopLossPips * pipValue);
+      return lot;
+   }
+
+   // --- Hitung lot dinamis dari confidence + risk ---
+   double GetDynamicLot(double confidence, double stopLossPips=30, string symbol=NULL)
+   {
+      if(symbol==NULL) symbol = _Symbol;
+
+      // Hitung lot dari confidence
+      double lotFromConfidence = baseLot + (maxLot - baseLot) * confidence;
+
+      // Hitung lot dari risk %
+      double lotByRisk = CalculateLotByRisk(stopLossPips, symbol);
+
+      // Ambil lot terkecil (biar aman)
+      double lot = MathMin(lotFromConfidence, lotByRisk);
+
+      // --- Validasi margin ---
+      double freeMargin = GetFreeMargin();
+      double marginReq  = 0.0;
+      if(!OrderCalcMargin(ORDER_TYPE_BUY, symbol, lot, SymbolInfoDouble(symbol, SYMBOL_ASK), marginReq))
+         marginReq = 0;
+
+      if(marginReq > freeMargin)
+      {
+         // Turunkan lot biar cukup margin
+         lot = (freeMargin / marginReq) * lot;
+      }
+
+      // --- Batasi maxLot ---
+      lot = MathMin(lot, maxLot);
+
+      return NormalizeDouble(lot, 2);
+   }
+
+   // --- Cek apakah boleh entry ---
+   bool CanOpenTrade()
+   {
+      // Cek margin level
+      if(GetMarginLevel() < minMarginLevel) return false;
+
+      // Cek spread
+      double spread = (SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
+      if(spread > maxSpread) return false;
+
+      // Cek max drawdown harian
+      static double equityStart = GetEquity();
+      double ddPercent = ((equityStart - GetEquity()) / equityStart) * 100.0;
+      if(ddPercent > maxDDaily) return false;
+
+      return true;
+   }
 }
-
-//==================================================================
-// Fungsi: CalculateSLTP
-// Deskripsi: Menghitung Stop Loss dan Take Profit otomatis
-// Parameter:
-//   dir         = DIR_BUY / DIR_SELL
-//   entry       = harga entry
-//   stopLossPips= jarak SL (pips)
-//   rrRatio     = Risk/Reward Ratio (misal 2 → TP 2x SL)
-// Output:
-//   sl, tp melalui reference
-//==================================================================
-void CalculateSLTP(Dir dir,double entry,double stopLossPips,double rrRatio,
-                   double &sl,double &tp)
-{
-    double pipValue = _Point;
-
-    if(dir==DIR_BUY)
-    {
-        sl = entry - stopLossPips*pipValue;
-        tp = entry + stopLossPips*pipValue*rrRatio;
-    }
-    else if(dir==DIR_SELL)
-    {
-        sl = entry + stopLossPips*pipValue;
-        tp = entry - stopLossPips*pipValue*rrRatio;
-    }
-    else
-    {
-        sl=0; tp=0;
-    }
-}
-
-//==================================================================
-// Fungsi: ApplyRiskManagement
-// Deskripsi: Menggabungkan perhitungan lot, SL, TP sekaligus
-// Parameter:
-//   dir         = DIR_BUY / DIR_SELL
-//   entry       = harga entry
-//   stopLossPips= jarak SL (pips)
-//   rrRatio     = risk/reward ratio
-//   riskPercent = % risiko account
-// Return:
-//   NISignalRisk struct yang bisa langsung dipakai di TradeExecutor
-//==================================================================
-struct NISignalRisk
-{
-    double lot;
-    double sl;
-    double tp;
-};
-
-NISignalRisk ApplyRiskManagement(Dir dir,double entry,double stopLossPips,
-                                 double rrRatio,double riskPercent)
-{
-    NISignalRisk result;
-    result.lot = CalculateRiskLot(riskPercent,stopLossPips);
-    CalculateSLTP(dir,entry,stopLossPips,rrRatio,result.sl,result.tp);
-    return result;
-}
-
-

@@ -78,6 +78,14 @@ input int  SMCLookbackBars       = 50;
 input bool EnableDebug           = true;
 input int  PrintIntervalSec      = 5;     // interval print log
 
+namespace AppConfig
+{
+   double riskPercent   = 1.0;   // risiko per trade (% balance)
+   double slPips        = 30;    // default Stop Loss (dalam pips)
+   double tpPips        = 60;    // default Take Profit (dalam pips)
+   bool   useFilters    = true;  // apakah aktifkan filter
+}
+
 /*
 ===================== PANDUAN PENGGUNAAN =======================
 

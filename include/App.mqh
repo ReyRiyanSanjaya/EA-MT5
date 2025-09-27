@@ -20,6 +20,8 @@
 
 #include <Utils/Config.mqh>          // ambil semua input konfigurasi
 #include <Modules/FilterEngine.mqh>  // filter modul
+#include "Modules/SignalEngine.mqh"
+#include "RiskManager.mqh"
 
 //==================================================================
 // Interface strategi
@@ -97,15 +99,23 @@ namespace App
    //===============================================================
    void OnTick()
    {
-      if(EnableAutoTrading && !g_filterEngine.PassAll())
-      {
-         if(EnableDebug)
-            Comment("⛔ Entry diblok oleh filter.");
-         return;
-      }
+      TradeSignal finalSig;
 
-      if(g_activeStrategy != NULL)
-         g_activeStrategy.OnTick();
+      if(SignalEngine::GetConsensusSignal(finalSig))
+      {
+         double lotSize = RiskManager::GetDynamicLot(finalSig.confidence);
+
+         Print("Final Signal: ", finalSig.description,
+               " | Dir: ", finalSig.direction,
+               " | Lot: ", DoubleToString(lotSize,2),
+               " | Conf: ", DoubleToString(finalSig.confidence,2));
+
+         // --- Eksekusi trade sesuai arah ---
+         if(finalSig.direction == 1)
+            ExecuteBuy(lotSize);
+         else if(finalSig.direction == -1)
+            ExecuteSell(lotSize);
+      }
    }
 
    //===============================================================
