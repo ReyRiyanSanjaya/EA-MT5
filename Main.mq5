@@ -1,51 +1,57 @@
-//+------------------------------------------------------------------+
-//| main.mq5 - Momentum EA (Refactored Entry Point)                 |
-//| Berdasarkan: MomentumEA_M5M15.mq5                               |
-//| Framework: Mini MQL5 EA Framework                               |
-//+------------------------------------------------------------------+
-#property copyright "2025, MS-Traders"
-#property version   "2.00"
-#property strict
+//==================================================================
+// main.mq5
+// Entry Point Expert Advisor (EA)
+//
+// Fungsi:
+//   - Memanggil framework inti (App.mqh)
+//   - Registrasi strategi yang akan digunakan
+//   - Menentukan strategi aktif
+//   - Menghubungkan lifecycle EA: OnInit, OnTick, OnDeinit
+//
+// Struktur project:
+//   MQL5/Experts/ProjectAnda/main.mq5
+//   MQL5/Include/App.mqh
+//   MQL5/Include/Modules/FilterEngine.mqh
+//   MQL5/Include/Strategies/TrendFollowing.mqh
+//
+//==================================================================
 
-#include "App.mqh"
+#include <App.mqh>
+#include <Strategies/TrendFollowing.mqh>
 
-//-------------------------------------------------------------------
-// Global instance
-//-------------------------------------------------------------------
-CApp app;
+//----------------------------------------------------------
+// Buat instance strategi global
+//----------------------------------------------------------
+static TrendFollowing g_trendFollowing;
 
-//-------------------------------------------------------------------
-// OnInit
-//-------------------------------------------------------------------
+//----------------------------------------------------------
+// EA Lifecycle
+//----------------------------------------------------------
 int OnInit()
-  {
-   Print("=== EA Initializing (Momentum Framework) ===");
-
-   if(!app.Initialize())
-     {
-      Print("❌ EA initialization failed!");
+{
+   // Inisialisasi App
+   if(!App::Init())
       return INIT_FAILED;
-     }
 
-   Print("✅ EA Initialized Successfully");
+   // Registrasi strategi diambil dari include/app.mqh
+   App::RegisterStrategy(&g_trendFollowing);
+
+   // Load strategi default
+   App::LoadStrategy("TrendFollowing");
+
    return INIT_SUCCEEDED;
-  }
+}
 
-//-------------------------------------------------------------------
-// OnDeinit
-//-------------------------------------------------------------------
-void OnDeinit(const int reason)
-  {
-   Print("=== EA Deinitializing === Reason: ", reason);
-   app.Deinitialize();
-   Print("=== EA Deinitialized ===");
-  }
-
-//-------------------------------------------------------------------
-// OnTick
-//-------------------------------------------------------------------
 void OnTick()
-  {
-   app.Run();   // Jalankan engine utama
-  }
-//+------------------------------------------------------------------+
+{
+   App::OnTick();
+}
+
+void OnDeinit(const int reason)
+{
+   App::Deinit(reason);
+}
+
+//==================================================================
+// EOF
+//==================================================================
