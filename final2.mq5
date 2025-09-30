@@ -80,7 +80,7 @@ bool IsNewsPeriod();
 void CleanupExpiredData();
 
 //+------------------------------------------------------------------+
-//| Struct sinyal pattern + strength + nama pattern                 |
+//| Chart Pattern Signal Structure (DIPERBAIKI LENGKAP)            |
 //+------------------------------------------------------------------+
 struct ChartPatternSignal
 {
@@ -88,9 +88,10 @@ struct ChartPatternSignal
     bool isStrong;
     string patternName;
     double confidence;
+    double entryPrice;    // DITAMBAHKAN
+    double stopLoss;      // DITAMBAHKAN
+    double takeProfit;    // DITAMBAHKAN
 };
-
-
 
 // Tambahkan deklarasi struct ini di bagian atas file
 struct PASignal
@@ -700,7 +701,7 @@ SignalEngine signalEngine; // Instance SignalEngine
 
 // Tambahkan variabel global untuk tracking waktu entry
 datetime lastTradeTime = 0;
-int minSecondsBetweenTrades = 60; // Minimal 60 detik antara trade
+int minSecondsBetweenTrades = 0; // Minimal 60 detik antara trade
 
 void OnTick()
 {
@@ -727,6 +728,10 @@ void OnTick()
     bool ultraTierExecuted = ExecuteUltraTier1();
     if(ultraTierExecuted) return;
 
+    // ==================== ENHANCED TIER 5:  ====================
+    bool momentumTierExecuted = ExecuteMomentumTier5();
+    if(momentumTierExecuted) return;
+
     // ==================== POWER TIER 2: MOMENTUM & CANDLE SCALPING ====================
     bool powerTierExecuted = ExecutePowerTier2();
     if(powerTierExecuted) return;
@@ -734,6 +739,10 @@ void OnTick()
     // ==================== ENHANCED TIER 3: STOCHASTIC POWER ====================
     bool enhancedTierExecuted = ExecuteEnhancedTier3();
     if(enhancedTierExecuted) return;
+
+    // ==================== ENHANCED TIER 4:  ====================
+    bool advancedTierExecuted = ExecuteAdvancedTier4();
+    if(advancedTierExecuted) return;
 
     // ==================== BACKUP SYSTEM ====================
     ExecuteBackupSystem();
@@ -766,7 +775,7 @@ bool ExecuteUltraTier1()
 {
     // 1. ORDER BLOCK SUPER FILTERED
     static datetime lastOBCheck = 0;
-    if(UseOrderBlock && (TimeCurrent() - lastOBCheck >= 14400))
+    if(UseOrderBlock && (TimeCurrent() - lastOBCheck >= 3600))
     {
         OBSignal obSignal = DetectOrderBlockPro(OB_BaseLot, OB_EMAPeriod1, OB_EMAPeriod2, OB_Levels, OB_ZoneBufferPips, OB_Lookback);
         
@@ -935,6 +944,208 @@ bool ExecuteEnhancedTier3()
 
     return false;
 }
+
+// ==================== NEW TIER 4: ADVANCED PATTERNS ====================
+bool ExecuteAdvancedTier4()
+{
+    bool executed = false;
+    
+    // 9. CHART PATTERNS ULTIMATE
+    static datetime lastChartCheck = 0;
+    if(TimeCurrent() - lastChartCheck >= 300) // Setiap 5 menit
+    {
+        ChartPatternSignal chartSignal = GetChartPatternSignalUltimate(1, 10, PERIOD_M15);
+        
+        if(chartSignal.signal != DIR_NONE && chartSignal.isStrong && IsSignalInTrend(chartSignal.signal))
+        {
+            double chartLot = RiskManager::GetDynamicLot(0.7, 
+                (int)((chartSignal.entryPrice - chartSignal.stopLoss) / _Point / 10));
+            
+            if(chartSignal.signal == DIR_BUY)
+            {
+                int slPips = (int)((chartSignal.entryPrice - chartSignal.stopLoss) / _Point / 10);
+                int tpPips = (int)((chartSignal.takeProfit - chartSignal.entryPrice) / _Point / 10);
+                ExecuteBuy(chartLot, slPips, tpPips);
+                
+                PrintFormat("📈 CHART PATTERN: BUY | %s | Strong Pattern", chartSignal.patternName);
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+            else
+            {
+                int slPips = (int)((chartSignal.stopLoss - chartSignal.entryPrice) / _Point / 10);
+                int tpPips = (int)((chartSignal.entryPrice - chartSignal.takeProfit) / _Point / 10);
+                ExecuteSell(chartLot, slPips, tpPips);
+                
+                PrintFormat("📈 CHART PATTERN: SELL | %s | Strong Pattern", chartSignal.patternName);
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+        }
+        lastChartCheck = TimeCurrent();
+    }
+
+    // 10. HARMONIC PATTERNS PRO
+    static datetime lastHarmonicCheck = 0;
+    if(TimeCurrent() - lastHarmonicCheck >= 600) // Setiap 10 menit
+    {
+        // Ambil titik XABCD dari chart
+        double X = iHigh(_Symbol, PERIOD_H1, 10);
+        double A = iLow(_Symbol, PERIOD_H1, 8);
+        double B = iHigh(_Symbol, PERIOD_H1, 6);
+        double C = iLow(_Symbol, PERIOD_H1, 4);
+        double D = iClose(_Symbol, PERIOD_H1, 0);
+        
+        HarmonicPatternSignal harmonicSignal = DetectHarmonicPattern(X, A, B, C, D);
+        
+        if(harmonicSignal.signal != DIR_NONE && harmonicSignal.isStrong && IsSignalInTrend(harmonicSignal.signal))
+        {
+            double harmonicLot = RiskManager::GetDynamicLot(0.6, 
+                (int)(MathAbs(D - harmonicSignal.stopLoss) / _Point / 10));
+            
+            if(harmonicSignal.signal == DIR_BUY)
+            {
+                ExecuteBuy(harmonicLot, 
+                    (int)((D - harmonicSignal.stopLoss) / _Point / 10),
+                    (int)((harmonicSignal.takeProfit - D) / _Point / 10));
+                
+                PrintFormat("🎯 HARMONIC PATTERN: BUY | %s | High Probability", harmonicSignal.patternName);
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+            else
+            {
+                ExecuteSell(harmonicLot,
+                    (int)((harmonicSignal.stopLoss - D) / _Point / 10),
+                    (int)((D - harmonicSignal.takeProfit) / _Point / 10));
+                
+                PrintFormat("🎯 HARMONIC PATTERN: SELL | %s | High Probability", harmonicSignal.patternName);
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+        }
+        lastHarmonicCheck = TimeCurrent();
+    }
+
+    // 11. SMART MONEY CONCEPT (SMC)
+    static datetime lastSMCCheck = 0;
+    if(TimeCurrent() - lastSMCCheck >= 180) // Setiap 3 menit
+    {
+        SMCSignal smcSignal = DetectSMCSignalAdvanced(SMC_BaseLot, SMC_EMA_Period1, SMC_EMA_Period2, SMC_Lookback, SMC_ATR_Multiplier);
+        
+        if(smcSignal.signal != DIR_NONE && smcSignal.isStrong)
+        {
+            if(smcSignal.signal == DIR_BUY)
+            {
+                ExecuteBuy(smcSignal.lotSize,
+                    (int)((smcSignal.entryPrice - smcSignal.stopLoss) / _Point / 10),
+                    (int)((smcSignal.takeProfit - smcSignal.entryPrice) / _Point / 10));
+                
+                PrintFormat("💎 SMC SIGNAL: BUY | Smart Money Detection");
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+            else
+            {
+                ExecuteSell(smcSignal.lotSize,
+                    (int)((smcSignal.stopLoss - smcSignal.entryPrice) / _Point / 10),
+                    (int)((smcSignal.entryPrice - smcSignal.takeProfit) / _Point / 10));
+                
+                PrintFormat("💎 SMC SIGNAL: SELL | Smart Money Detection");
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+        }
+        lastSMCCheck = TimeCurrent();
+    }
+
+    return executed;
+}
+
+// ==================== NEW TIER 5: MOMENTUM & VOLUME ====================
+bool ExecuteMomentumTier5()
+{
+    bool executed = false;
+
+    // 12. ICEBERG VOLUME DETECTION
+    static datetime lastIcebergCheck = 0;
+    if(TimeCurrent() - lastIcebergCheck >= 60) // Setiap 1 menit
+    {
+        IcebergLevel iceberg = DetectIcebergAdvanced(0); // Current candle
+        
+        if(iceberg == ICE_STRONG)
+        {
+            // Ambil sinyal dari momentum untuk konfirmasi arah
+            MomentumSignal momentumSignal;
+            if(DetectMomentumPullback(PERIOD_M5, momentumSignal, 10) && momentumSignal.found)
+            {
+                double volumeLot = RiskManager::GetDynamicLot(0.4, 
+                    (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10));
+                
+                if(momentumSignal.dir == DIR_BUY)
+                {
+                    ExecuteBuy(volumeLot,
+                        (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10),
+                        (int)((momentumSignal.takeProfit - momentumSignal.entryPrice) / _Point / 10));
+                    
+                    PrintFormat("🧊 ICEBERG VOLUME: BUY | Strong Institutional Volume");
+                    lastTradeTime = TimeCurrent();
+                    executed = true;
+                }
+                else
+                {
+                    ExecuteSell(volumeLot,
+                        (int)((momentumSignal.stopLoss - momentumSignal.entryPrice) / _Point / 10),
+                        (int)((momentumSignal.entryPrice - momentumSignal.takeProfit) / _Point / 10));
+                    
+                    PrintFormat("🧊 ICEBERG VOLUME: SELL | Strong Institutional Volume");
+                    lastTradeTime = TimeCurrent();
+                    executed = true;
+                }
+            }
+        }
+        lastIcebergCheck = TimeCurrent();
+    }
+
+    // 13. SMART CONVERGENCE MOMENTUM (SCM)
+    static datetime lastSCMCheck = 0;
+    if(TimeCurrent() - lastSCMCheck >= 120) // Setiap 2 menit
+    {
+        SCMSignal scmSignal = DetectSCMSignalHighProb(SCM_BaseLot, SCM_EMAPeriod, SCM_RSIPeriod, 
+                                                     SCM_RSI_OB, SCM_RSI_OS, SCM_MACD_Fast, 
+                                                     SCM_MACD_Slow, SCM_MACD_Signal, SCM_ATRPeriod, 
+                                                     SCM_ATRMultiplier);
+        
+        if(scmSignal.signal != DIR_NONE && scmSignal.isStrong)
+        {
+            if(scmSignal.signal == DIR_BUY)
+            {
+                ExecuteBuy(scmSignal.lotSize,
+                    (int)((scmSignal.entryPrice - scmSignal.stopLoss) / _Point / 10),
+                    (int)((scmSignal.takeProfit - scmSignal.entryPrice) / _Point / 10));
+                
+                PrintFormat("⚡ SCM SIGNAL: BUY | Multi-Indicator Convergence");
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+            else
+            {
+                ExecuteSell(scmSignal.lotSize,
+                    (int)((scmSignal.stopLoss - scmSignal.entryPrice) / _Point / 10),
+                    (int)((scmSignal.entryPrice - scmSignal.takeProfit) / _Point / 10));
+                
+                PrintFormat("⚡ SCM SIGNAL: SELL | Multi-Indicator Convergence");
+                lastTradeTime = TimeCurrent();
+                executed = true;
+            }
+        }
+        lastSCMCheck = TimeCurrent();
+    }
+
+    return executed;
+}
+
+
 void ExecuteBackupSystem()
 {
     static datetime lastSignalCheck = 0;
@@ -996,7 +1207,7 @@ bool IsScalpingCondition()
     MqlDateTime timeStruct;
     TimeToStruct(TimeCurrent(), timeStruct);
     int hour = timeStruct.hour;
-    return (hour >= 8 && hour <= 20); // Active trading hours
+    return (hour >= 0 && hour <= 24); // Active trading hours
 }
 
 bool IsStochasticPower(const StochSignal &signal)
@@ -1513,6 +1724,9 @@ struct HarmonicPatternSignal
     Dir signal;
     bool isStrong;
     string patternName;
+    double entryPrice;    // DITAMBAHKAN
+    double stopLoss;      // DITAMBAHKAN
+    double takeProfit;    // DITAMBAHKAN
 };
 
 //==================================================================
@@ -2088,8 +2302,8 @@ double MomentumCfg::minBodyMultiplier = 0.5;
 bool MomentumCfg::useEngulfingFilter = true;
 bool MomentumCfg::usePinbarFilter = false;
 int MomentumCfg::confirmationCandles = 1;
-double MomentumCfg::slPipsDefault = 30;
-double MomentumCfg::tpPipsDefault = 60;
+double MomentumCfg::slPipsDefault = 50;
+double MomentumCfg::tpPipsDefault = 100;
 double MomentumCfg::maxLotPerTrade = 1.0;
 
 //+------------------------------------------------------------------+
@@ -2110,8 +2324,8 @@ struct MomentumSignal
 //+------------------------------------------------------------------+
 //| Momentum Pullback Parameters                                    |
 //+------------------------------------------------------------------+
-input ENUM_TIMEFRAMES MomentumTF = PERIOD_M15;        // Timeframe untuk momentum detection
-input ENUM_TIMEFRAMES MomentumHTF = PERIOD_H1;        // Higher timeframe untuk konfirmasi
+input ENUM_TIMEFRAMES MomentumTF = PERIOD_M5;        // Timeframe untuk momentum detection
+input ENUM_TIMEFRAMES MomentumHTF = PERIOD_M15;        // Higher timeframe untuk konfirmasi
 input int MomentumLookback = 100;                     // Lookback bars untuk momentum
 input bool UseMomentumPullback = true;                // Aktifkan momentum pullback detection
 
@@ -2490,7 +2704,7 @@ input double OB_BaseLot = 0.01;                        // Lot dasar untuk OB
 input int OB_EMAPeriod1 = 50;                          // EMA period untuk TF1
 input int OB_EMAPeriod2 = 50;                          // EMA period untuk TF2
 input int OB_Levels = 3;                               // Jumlah level OB
-input double OB_ZoneBufferPips = 10;                   // Buffer zona dalam pips
+input double OB_ZoneBufferPips = 50;                   // Buffer zona dalam pips
 input int OB_Lookback = 20;                            // Lookback candles untuk OB
 
 //==================================================================
@@ -3015,8 +3229,8 @@ struct PA_Signal
 //| Price Action Parameters                                         |
 //+------------------------------------------------------------------+
 input bool UsePriceAction = true;                      // Aktifkan price action detection
-input ENUM_TIMEFRAMES PA_MainTF = PERIOD_M15;           // Main timeframe untuk trend
-input ENUM_TIMEFRAMES PA_ConfirmTF = PERIOD_M5;       // Confirmation timeframe
+input ENUM_TIMEFRAMES PA_MainTF = PERIOD_M5;           // Main timeframe untuk trend
+input ENUM_TIMEFRAMES PA_ConfirmTF = PERIOD_M15;       // Confirmation timeframe
 input int PA_EMA_Long = 200;                           // EMA long period untuk trend
 input int PA_EMA_Short = 50;                           // EMA short period untuk konfirmasi
 input double PA_RiskPercent = 1.0;                     // Risiko per trade
@@ -3221,8 +3435,8 @@ struct SMCSignal
 //| SMC (Smart Money Concept) Parameters                            |
 //+------------------------------------------------------------------+
 input bool UseSMCSignal = true;                        // Aktifkan SMC signal detection
-input ENUM_TIMEFRAMES SMC_TF1 = PERIOD_M1;             // Timeframe 1 untuk SMC
-input ENUM_TIMEFRAMES SMC_TF2 = PERIOD_M5;             // Timeframe 2 untuk trend confirmation
+input ENUM_TIMEFRAMES SMC_TF1 = PERIOD_H1;             // Timeframe 1 untuk SMC
+input ENUM_TIMEFRAMES SMC_TF2 = PERIOD_H4;             // Timeframe 2 untuk trend confirmation
 input double SMC_BaseLot = 0.01;                       // Lot dasar untuk SMC
 input int SMC_EMA_Period1 = 50;                        // EMA period untuk TF1
 input int SMC_EMA_Period2 = 50;                        // EMA period untuk TF2
@@ -3367,7 +3581,7 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //+------------------------------------------------------------------+
 input bool UseStochastic = true;                       // Aktifkan stochastic detection
 input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M5;         // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_H1;        // Timeframe tinggi untuk konfirmasi
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M15;        // Timeframe tinggi untuk konfirmasi
 input int Stoch_KPeriod = 14;                          // %K period
 input int Stoch_DPeriod = 3;                           // %D period
 input int Stoch_Slowing = 3;                           // Slowing period
