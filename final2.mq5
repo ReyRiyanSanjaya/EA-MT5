@@ -14,10 +14,10 @@ input double BE_Pips = 50;                  // profit minimal untuk BE → cepat
 input double BE_Buffer = 50;                // buffer setelah BE → lebih agresif
 input int LevelsCount = 2;                   // jumlah level trailing aktif
 input double TrailLevel1 = 100;              // level profit pip 1 → mulai trailing cepat
-input double TrailDistance1 = 60;            // trailing pip 1 → jarak sangat dekat
+input double TrailDistance1 = 80;            // trailing pip 1 → jarak sangat dekat
 input double TrailLevel2 = 200;              // level profit pip 2
-input double TrailDistance2 = 50;            // trailing pip 2
-input ENUM_TIMEFRAMES ConfirmTF = PERIOD_M5; // TF konfirmasi trend → lebih cepat
+input double TrailDistance2 = 100;            // trailing pip 2
+input ENUM_TIMEFRAMES ConfirmTF = PERIOD_M1; // TF konfirmasi trend → lebih cepat
 input bool UseTrendFilter = false;           // matikan filter trend agar entry cepat
 
 // Risk Management Parameters (lebih fleksibel)
