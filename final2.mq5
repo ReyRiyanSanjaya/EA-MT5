@@ -382,14 +382,14 @@ void ExecuteBuy(double lot, int slPips, int tpPips)
     double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
     // Pastikan SL minimal 30 pips untuk menghindari noise market
-    //    slPips = MathMax(slPips, 30);
-    //    tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
+       slPips = MathMax(slPips, 50);
+       tpPips = MathMax(tpPips, 100); // Minimal RR 1:1.5
 
-    //    double sl  = ask - slPips * _Point;
-    //    double tp  = ask + tpPips * _Point;
+       double sl  = ask - slPips * _Point;
+       double tp  = ask + tpPips * _Point;
 
-    double sl = slPips;
-    double tp = tpPips;
+    // double sl = slPips;
+    // double tp = tpPips;
     MqlTradeRequest request;
     MqlTradeResult result;
     ZeroMemory(request);
@@ -416,14 +416,14 @@ void ExecuteSell(double lot, int slPips, int tpPips)
     double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
     // Pastikan SL minimal 30 pips untuk menghindari noise market
-    //    slPips = MathMax(slPips, 30);
-    //    tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
+       slPips = MathMax(slPips, 50);
+       tpPips = MathMax(tpPips, 100); // Minimal RR 1:1.5
 
-    //    double sl  = bid + slPips * _Point;
-    //    double tp  = bid - tpPips * _Point;
+       double sl  = bid + slPips * _Point;
+       double tp  = bid - tpPips * _Point;
 
-    double sl = slPips;
-    double tp = tpPips;
+    // double sl = slPips;
+    // double tp = tpPips;
 
     MqlTradeRequest request;
     MqlTradeResult result;
@@ -726,15 +726,15 @@ int minSecondsBetweenTrades = 0; // Minimal 60 detik antara trade
 int GetCurrentTicketCount()
 {
     int count = 0;
-    for(int i = 0; i < PositionsTotal(); i++)
+    for (int i = 0; i < PositionsTotal(); i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
         {
             string symbol = PositionGetString(POSITION_SYMBOL);
             long magic = PositionGetInteger(POSITION_MAGIC);
-            
-            if(symbol == _Symbol && magic == 12345) // Ganti dengan magic number EA Anda
+
+            if (symbol == _Symbol && magic == 12345) // Ganti dengan magic number EA Anda
             {
                 count++;
             }
@@ -742,6 +742,13 @@ int GetCurrentTicketCount()
     }
     return count;
 }
+
+//+------------------------------------------------------------------+
+//| Input Parameters                                                |
+//+------------------------------------------------------------------+
+input bool EnableSadamTier = true; // Enable/Disable Sadam Tier
+input int Sadam_Priority = 3;      // Priority order (1=highest)
+//+------------------------------------------------------------------+
 
 void OnTick()
 {
@@ -782,9 +789,9 @@ void OnTick()
     if (ultraTierExecuted)
         return;
 
-    // ==================== ENHANCED TIER 5:  ====================
-    bool momentumTierExecuted = ExecuteMomentumTier5();
-    if (momentumTierExecuted)
+    // ==================== SADAM TIER: ADVANCED MULTI-FILTER SYSTEM ====================
+    bool sadamTierExecuted = ExecuteSadamTier();
+    if (sadamTierExecuted)
         return;
 
     // ==================== POWER TIER 2: MOMENTUM & CANDLE SCALPING ====================
@@ -802,11 +809,363 @@ void OnTick()
     if (advancedTierExecuted)
         return;
 
+    // ==================== ENHANCED TIER 5:  ====================
+    bool momentumTierExecuted = ExecuteMomentumTier5();
+    if (momentumTierExecuted)
+        return;
+
     // ==================== BACKUP SYSTEM ====================
     ExecuteBackupSystem();
 
     // ==================== ADVANCED RISK MANAGEMENT ====================
     ManageAdvancedRisk();
+}
+
+//+------------------------------------------------------------------+
+//| Input Parameters - SADAM SYSTEM                                 |
+//+------------------------------------------------------------------+
+input ENUM_TIMEFRAMES SADAM_TF_Entry = PERIOD_M15; // Sadam: Timeframe Entry
+input ENUM_TIMEFRAMES SADAM_TF_Trend = PERIOD_H1;  // Sadam: Timeframe Trend Filter
+input int SADAM_EMA_Period = 200;                  // Sadam: EMA untuk trend filter
+input int SADAM_ATR_Period = 14;                   // Sadam: ATR period
+input double SADAM_ATR_Factor = 1.5;               // Sadam: ATR multiplier
+input int SADAM_Volume_Period = 20;                // Sadam: rata-rata volume N candle
+input int SADAM_Momentum_Candles = 2;              // Sadam: jumlah candle momentum searah
+input double SADAM_Risk_Percent = 30.0;             // Sadam: risk per trade (% balance)
+input int SADAM_Fib_Type = 0;                      // Sadam: 0=off, 1=50%, 2=61.8%
+input int SADAM_SR_Lookback = 50;                  // Sadam: jumlah candle untuk SR
+input double SADAM_SR_BufferPips = 30;             // Sadam: buffer jarak dari SnR
+input bool SADAM_Enabled = true;                   // Sadam: Enable/Disable system
+input int SADAM_Priority = 3;                      // Sadam: Priority order (1=highest)
+
+//+------------------------------------------------------------------+
+//| Check Entry Signal - SADAM SYSTEM                               |
+//+------------------------------------------------------------------+
+bool DeteksiSadam(string symbol, bool isBuy)
+{
+    // --- 1. Higher TF Trend Filter
+    double ema[];
+    if (CopyBuffer(iMA(symbol, SADAM_TF_Trend, SADAM_EMA_Period, 0, MODE_EMA, PRICE_CLOSE), 0, 0, 2, ema) < 2)
+        return false;
+    double priceTrend = iClose(symbol, SADAM_TF_Trend, 0);
+    if (isBuy && priceTrend < ema[0])
+        return false;
+    if (!isBuy && priceTrend > ema[0])
+        return false;
+
+    // --- 2. ATR Candle Strength Filter
+    double atr[];
+    if (CopyBuffer(iATR(symbol, SADAM_TF_Entry, SADAM_ATR_Period), 0, 0, 2, atr) < 2)
+        return false;
+    double body = MathAbs(iClose(symbol, SADAM_TF_Entry, 0) - iOpen(symbol, SADAM_TF_Entry, 0));
+    if (body < atr[0] * SADAM_ATR_Factor)
+        return false;
+
+    // --- 3. Volume Confirmation Filter
+    double avgVolume = 0;
+    for (int i = 1; i <= SADAM_Volume_Period; i++)
+        avgVolume += (double)iVolume(symbol, SADAM_TF_Entry, i);
+    avgVolume /= SADAM_Volume_Period;
+    double currentVolume = (double)iVolume(symbol, SADAM_TF_Entry, 0);
+    if (currentVolume <= avgVolume)
+        return false;
+
+    // --- 4. Multi-Candle Momentum Confirmation
+    int bullish = 0, bearish = 0;
+    for (int i = 1; i <= SADAM_Momentum_Candles; i++)
+    {
+        double o = iOpen(symbol, SADAM_TF_Entry, i);
+        double c = iClose(symbol, SADAM_TF_Entry, i);
+        if (c > o)
+            bullish++;
+        if (c < o)
+            bearish++;
+    }
+    if (isBuy && bullish < SADAM_Momentum_Candles)
+        return false;
+    if (!isBuy && bearish < SADAM_Momentum_Candles)
+        return false;
+
+    // --- 5. Fibonacci Pullback Entry (opsional)
+    if (SADAM_Fib_Type > 0)
+    {
+        double high = iHigh(symbol, SADAM_TF_Entry, 1);
+        double low = iLow(symbol, SADAM_TF_Entry, 1);
+        double fibLevel = (SADAM_Fib_Type == 1 ? 0.5 : 0.618);
+        double fibPrice = low + (high - low) * fibLevel;
+        double lastPrice = iClose(symbol, SADAM_TF_Entry, 0);
+
+        if (isBuy && lastPrice < fibPrice)
+            return false;
+        if (!isBuy && lastPrice > fibPrice)
+            return false;
+    }
+
+    // --- 6. Support & Resistance Filter (Smart SnR Trading)
+    double curHigh = iHigh(symbol, SADAM_TF_Entry, 0);
+    double curLow = iLow(symbol, SADAM_TF_Entry, 0);
+    double recentHigh = curHigh;
+    double recentLow = curLow;
+
+    for (int i = 1; i <= SADAM_SR_Lookback; i++)
+    {
+        recentHigh = MathMax(recentHigh, iHigh(symbol, SADAM_TF_Entry, i));
+        recentLow = MathMin(recentLow, iLow(symbol, SADAM_TF_Entry, i));
+    }
+
+    double buffer = SymbolInfoDouble(symbol, SYMBOL_POINT) * SADAM_SR_BufferPips;
+    double lastPrice = iClose(symbol, SADAM_TF_Entry, 0);
+
+    // --- Jika harga terlalu dekat SnR -> hindari entry
+    if (MathAbs(lastPrice - recentHigh) < buffer)
+        return false;
+    if (MathAbs(lastPrice - recentLow) < buffer)
+        return false;
+
+    // --- Smart SnR Trading Logic
+    // BUY: hanya valid jika harga dekat support & mantul (rejection candle)
+    if (isBuy)
+    {
+        if (MathAbs(lastPrice - recentLow) < buffer)
+        {
+            double closePrev = iClose(symbol, SADAM_TF_Entry, 1);
+            double openPrev = iOpen(symbol, SADAM_TF_Entry, 1);
+            if (closePrev < openPrev)
+                return false; // candle sebelumnya bearish → tolak BUY
+        }
+    }
+
+    // SELL: hanya valid jika harga dekat resistance & rejection
+    if (!isBuy)
+    {
+        if (MathAbs(lastPrice - recentHigh) < buffer)
+        {
+            double closePrev = iClose(symbol, SADAM_TF_Entry, 1);
+            double openPrev = iOpen(symbol, SADAM_TF_Entry, 1);
+            if (closePrev > openPrev)
+                return false; // candle sebelumnya bullish → tolak SELL
+        }
+    }
+
+    // --- Semua filter lolos
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Execute Sadam Tier - Advanced Multi-Filter System               |
+//+------------------------------------------------------------------+
+bool ExecuteSadamTier()
+{
+    if (!SADAM_Enabled)
+        return false;
+
+    string symbol = Symbol();
+    double lotSize = CalculateSadamLotSize(SADAM_Risk_Percent);
+
+    // Check BUY signal
+    if (DeteksiSadam(symbol, true))
+    {
+        double sl = CalculateSadamStopLoss(symbol, true);
+        double tp = CalculateSadamTakeProfit(symbol, true, sl);
+
+        // Eksekusi order tanpa pengecekan hasil
+        ExecuteTrade(symbol, ORDER_TYPE_BUY, lotSize, sl, tp, "SADAM-BUY");
+        Print("SADAM TIER: BUY Order Executed");
+        lastTradeTime = TimeCurrent();
+        return true;
+    }
+
+    // Check SELL signal
+    if (DeteksiSadam(symbol, false))
+    {
+        double sl = CalculateSadamStopLoss(symbol, false);
+        double tp = CalculateSadamTakeProfit(symbol, false, sl);
+
+        // Eksekusi order tanpa pengecekan hasil
+        ExecuteTrade(symbol, ORDER_TYPE_SELL, lotSize, sl, tp, "SADAM-SELL");
+        Print("SADAM TIER: SELL Order Executed");
+        lastTradeTime = TimeCurrent();
+        return true;
+    }
+
+    return false;
+}
+
+//+------------------------------------------------------------------+
+//| Execute Trade Function for MQL5                                 |
+//+------------------------------------------------------------------+
+bool ExecuteTrade(string symbol, ENUM_ORDER_TYPE orderType, double volume, double sl, double tp, string comment)
+{
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+    ZeroMemory(result);
+
+    // Set trade request parameters
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = symbol;
+    request.volume = volume;
+    request.type = orderType;
+    request.price = (orderType == ORDER_TYPE_BUY) ? SymbolInfoDouble(symbol, SYMBOL_ASK) : SymbolInfoDouble(symbol, SYMBOL_BID);
+    request.sl = sl;
+    request.tp = tp;
+    request.deviation = 10;
+    request.magic = 123456;
+    request.comment = comment;
+    request.type_filling = ORDER_FILLING_FOK;
+
+    // Send order
+    bool success = OrderSend(request, result);
+
+    if (!success)
+    {
+        Print("OrderSend failed. Error code: ", GetLastError());
+        Print("Retcode: ", result.retcode, ", Description: ", GetRetcodeID(result.retcode));
+        return false;
+    }
+
+    if (result.retcode != TRADE_RETCODE_DONE)
+    {
+        Print("Trade failed. Retcode: ", result.retcode, ", Description: ", GetRetcodeID(result.retcode));
+        return false;
+    }
+
+    Print("Trade executed successfully. Ticket: ", result.order);
+    return true;
+}
+
+//+------------------------------------------------------------------+
+//| Get Retcode ID for better error messages                        |
+//+------------------------------------------------------------------+
+string GetRetcodeID(int retcode)
+{
+    switch (retcode)
+    {
+    case 10004:
+        return "TRADE_RETCODE_REQUOTE";
+    case 10006:
+        return "TRADE_RETCODE_REJECT";
+    case 10007:
+        return "TRADE_RETCODE_CANCEL";
+    case 10008:
+        return "TRADE_RETCODE_PLACED";
+    case 10009:
+        return "TRADE_RETCODE_DONE";
+    case 10010:
+        return "TRADE_RETCODE_DONE_PARTIAL";
+    case 10011:
+        return "TRADE_RETCODE_ERROR";
+    case 10012:
+        return "TRADE_RETCODE_TIMEOUT";
+    case 10013:
+        return "TRADE_RETCODE_INVALID";
+    case 10014:
+        return "TRADE_RETCODE_INVALID_VOLUME";
+    case 10015:
+        return "TRADE_RETCODE_INVALID_PRICE";
+    case 10016:
+        return "TRADE_RETCODE_INVALID_STOPS";
+    case 10017:
+        return "TRADE_RETCODE_TRADE_DISABLED";
+    case 10018:
+        return "TRADE_RETCODE_MARKET_CLOSED";
+    case 10019:
+        return "TRADE_RETCODE_NO_MONEY";
+    case 10020:
+        return "TRADE_RETCODE_PRICE_CHANGED";
+    case 10021:
+        return "TRADE_RETCODE_PRICE_OFF";
+    case 10022:
+        return "TRADE_RETCODE_INVALID_EXPIRATION";
+    case 10023:
+        return "TRADE_RETCODE_ORDER_CHANGED";
+    case 10024:
+        return "TRADE_RETCODE_TOO_MANY_REQUESTS";
+    case 10025:
+        return "TRADE_RETCODE_NO_CHANGES";
+    case 10026:
+        return "TRADE_RETCODE_SERVER_DISABLES_AT";
+    case 10027:
+        return "TRADE_RETCODE_CLIENT_DISABLES_AT";
+    case 10028:
+        return "TRADE_RETCODE_LOCKED";
+    case 10029:
+        return "TRADE_RETCODE_FROZEN";
+    case 10030:
+        return "TRADE_RETCODE_INVALID_FILL";
+    case 10031:
+        return "TRADE_RETCODE_CONNECTION";
+    case 10032:
+        return "TRADE_RETCODE_ONLY_REAL";
+    case 10033:
+        return "TRADE_RETCODE_LIMIT_ORDERS";
+    case 10034:
+        return "TRADE_RETCODE_LIMIT_VOLUME";
+    case 10035:
+        return "TRADE_RETCODE_INVALID_ORDER";
+    case 10036:
+        return "TRADE_RETCODE_POSITION_CLOSED";
+    case 10038:
+        return "TRADE_RETCODE_INVALID_CLOSE_VOLUME";
+    case 10039:
+        return "TRADE_RETCODE_CLOSE_ORDER_EXIST";
+    case 10040:
+        return "TRADE_RETCODE_LIMIT_POSITIONS";
+    case 10041:
+        return "TRADE_RETCODE_REJECT_CANCEL";
+    case 10042:
+        return "TRADE_RETCODE_LONG_ONLY";
+    case 10043:
+        return "TRADE_RETCODE_SHORT_ONLY";
+    case 10044:
+        return "TRADE_RETCODE_CLOSE_ONLY";
+    case 10045:
+        return "TRADE_RETCODE_FIFO_CLOSE";
+    default:
+        return "UNKNOWN_ERROR";
+    }
+}
+//+------------------------------------------------------------------+
+//| Calculate Stop Loss - SADAM SYSTEM                              |
+//+------------------------------------------------------------------+
+double CalculateSadamStopLoss(string symbol, bool isBuy)
+{
+    double atr[];
+    if (CopyBuffer(iATR(symbol, SADAM_TF_Entry, SADAM_ATR_Period), 0, 0, 1, atr) < 1)
+        return 0;
+
+    double price = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID) : SymbolInfoDouble(symbol, SYMBOL_ASK);
+    double slDistance = atr[0] * SADAM_ATR_Factor;
+
+    return isBuy ? price - slDistance : price + slDistance;
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Take Profit - SADAM SYSTEM                            |
+//+------------------------------------------------------------------+
+double CalculateSadamTakeProfit(string symbol, bool isBuy, double sl)
+{
+    double price = isBuy ? SymbolInfoDouble(symbol, SYMBOL_BID) : SymbolInfoDouble(symbol, SYMBOL_ASK);
+    double risk = MathAbs(price - sl);
+
+    // Risk:Reward ratio 1:1.5
+    return isBuy ? price + (risk * 1.5) : price - (risk * 1.5);
+}
+
+//+------------------------------------------------------------------+
+//| Calculate Lot Size Based on Risk - SADAM SYSTEM                 |
+//+------------------------------------------------------------------+
+double CalculateSadamLotSize(double riskPercent)
+{
+    double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double riskAmount = accountBalance * riskPercent / 100.0;
+    double tickValue = SymbolInfoDouble(Symbol(), SYMBOL_TRADE_TICK_VALUE);
+
+    if (tickValue == 0)
+        return 0.01;
+
+    double lotSize = riskAmount / tickValue;
+    return NormalizeDouble(lotSize, 2);
 }
 
 // ==================== FILTER CANGGIH TANPA UBAH FUNGSI ====================
@@ -1575,10 +1934,11 @@ int CalendarEventsTotal()
 {
     datetime fromTime = TimeCurrent();
     datetime toTime = fromTime + 86400; // 24 jam ke depan
-    
+
     string events = GetTradingViewCalendarEvents(fromTime, toTime);
-    if(events == "") return 0;
-    
+    if (events == "")
+        return 0;
+
     return ParseTradingViewEventsCount(events);
 }
 
@@ -1586,10 +1946,11 @@ bool CalendarEventByIndex(int index, datetime &eventTime, string &eventName, int
 {
     datetime fromTime = TimeCurrent();
     datetime toTime = fromTime + 86400;
-    
+
     string events = GetTradingViewCalendarEvents(fromTime, toTime);
-    if(events == "") return false;
-    
+    if (events == "")
+        return false;
+
     return GetTradingViewEventByIndex(events, index, eventTime, eventName, impact);
 }
 
@@ -1597,25 +1958,25 @@ bool CalendarEventByIndex(int index, datetime &eventTime, string &eventName, int
 string GetTradingViewCalendarEvents(datetime fromTime, datetime toTime)
 {
     string result = "";
-    
+
     // Format URL TradingView Economic Calendar
-    string url = "https://economic-calendar.tradingview.com/events?from=" + 
-                 TimeToString(fromTime, TIME_DATE) + 
-                 "&to=" + 
+    string url = "https://economic-calendar.tradingview.com/events?from=" +
+                 TimeToString(fromTime, TIME_DATE) +
+                 "&to=" +
                  TimeToString(toTime, TIME_DATE);
-    
+
     string headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n";
     headers += "Accept: application/json, text/plain, */*\r\n";
-    
+
     char data[];
     char postData[];
     int timeout = 5000;
     string resultHeaders;
-    
+
     ResetLastError();
     int response = WebRequest("GET", url, headers, timeout, postData, data, resultHeaders);
-    
-    if(response == 200)
+
+    if (response == 200)
     {
         result = CharArrayToString(data);
         Print("✓ Successfully fetched economic calendar data");
@@ -1626,7 +1987,7 @@ string GetTradingViewCalendarEvents(datetime fromTime, datetime toTime)
         // Fallback ke simulated data
         result = GetSimulatedCalendarData(fromTime, toTime);
     }
-    
+
     return result;
 }
 
@@ -1634,43 +1995,45 @@ string GetTradingViewCalendarEvents(datetime fromTime, datetime toTime)
 int ParseTradingViewEventsCount(string jsonData)
 {
     int count = 0;
-    
+
     // Simple string parsing untuk menghitung events
     int startPos = StringFind(jsonData, "\"events\"");
-    if(startPos == -1) return 0;
-    
+    if (startPos == -1)
+        return 0;
+
     int arrayStart = StringFind(jsonData, "[", startPos);
     int arrayEnd = StringFind(jsonData, "]", arrayStart);
-    
-    if(arrayStart == -1 || arrayEnd == -1) return 0;
-    
+
+    if (arrayStart == -1 || arrayEnd == -1)
+        return 0;
+
     string eventsArray = StringSubstr(jsonData, arrayStart, arrayEnd - arrayStart + 1);
-    
+
     // Hitung jumlah objects dalam array
     int objCount = 0;
     int searchPos = 0;
-    while((searchPos = StringFind(eventsArray, "{", searchPos)) != -1)
+    while ((searchPos = StringFind(eventsArray, "{", searchPos)) != -1)
     {
         objCount++;
         searchPos++;
     }
-    
+
     // Filter untuk currency yang relevan
     string currentSymbol = _Symbol;
     string baseCurrency = StringSubstr(currentSymbol, 0, 3);
     string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
-    
+
     int relevantCount = 0;
-    for(int i = 0; i < objCount; i++)
+    for (int i = 0; i < objCount; i++)
     {
         // Cari country field dalam setiap event
         string eventStr = ExtractEventString(eventsArray, i);
-        if(IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
+        if (IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
         {
             relevantCount++;
         }
     }
-    
+
     return relevantCount;
 }
 
@@ -1679,19 +2042,22 @@ string ExtractEventString(string eventsArray, int index)
 {
     int currentIndex = 0;
     int startPos = 0;
-    
-    while(currentIndex <= index)
+
+    while (currentIndex <= index)
     {
         startPos = StringFind(eventsArray, "{", startPos);
-        if(startPos == -1) return "";
+        if (startPos == -1)
+            return "";
         currentIndex++;
-        if(currentIndex > index) break;
+        if (currentIndex > index)
+            break;
         startPos++;
     }
-    
+
     int endPos = StringFind(eventsArray, "}", startPos);
-    if(endPos == -1) return "";
-    
+    if (endPos == -1)
+        return "";
+
     return StringSubstr(eventsArray, startPos, endPos - startPos + 1);
 }
 
@@ -1699,16 +2065,18 @@ bool IsEventRelevant(string eventStr, string baseCurrency, string quoteCurrency)
 {
     // Cek country field
     int countryPos = StringFind(eventStr, "\"country\"");
-    if(countryPos == -1) return false;
-    
+    if (countryPos == -1)
+        return false;
+
     int colonPos = StringFind(eventStr, ":", countryPos);
     int quoteStart = StringFind(eventStr, "\"", colonPos);
     int quoteEnd = StringFind(eventStr, "\"", quoteStart + 1);
-    
-    if(quoteStart == -1 || quoteEnd == -1) return false;
-    
+
+    if (quoteStart == -1 || quoteEnd == -1)
+        return false;
+
     string country = StringSubstr(eventStr, quoteStart + 1, quoteEnd - quoteStart - 1);
-    
+
     return IsCurrencyRelevant(country, baseCurrency, quoteCurrency);
 }
 
@@ -1716,60 +2084,65 @@ bool GetTradingViewEventByIndex(string jsonData, int index, datetime &eventTime,
 {
     // Cari events array
     int startPos = StringFind(jsonData, "\"events\"");
-    if(startPos == -1) return false;
-    
+    if (startPos == -1)
+        return false;
+
     int arrayStart = StringFind(jsonData, "[", startPos);
     int arrayEnd = StringFind(jsonData, "]", arrayStart);
-    
-    if(arrayStart == -1 || arrayEnd == -1) return false;
-    
+
+    if (arrayStart == -1 || arrayEnd == -1)
+        return false;
+
     string eventsArray = StringSubstr(jsonData, arrayStart, arrayEnd - arrayStart + 1);
-    
+
     // Cari event berdasarkan index
     string currentSymbol = _Symbol;
     string baseCurrency = StringSubstr(currentSymbol, 0, 3);
     string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
-    
+
     int currentIndex = 0;
     int searchPos = 0;
-    
-    for(int i = 0; i < 100; i++) // Max 100 events
+
+    for (int i = 0; i < 100; i++) // Max 100 events
     {
         string eventStr = ExtractEventString(eventsArray, i);
-        if(eventStr == "") break;
-        
-        if(IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
+        if (eventStr == "")
+            break;
+
+        if (IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
         {
-            if(currentIndex == index)
+            if (currentIndex == index)
             {
                 // Extract event details
                 eventName = ExtractEventField(eventStr, "title") + " (" + ExtractEventField(eventStr, "country") + ")";
                 string timeStr = ExtractEventField(eventStr, "time");
                 eventTime = StringToTime(timeStr);
-                
+
                 string importance = ExtractEventField(eventStr, "importance");
                 impact = ImportanceToImpact(importance);
-                
+
                 return true;
             }
             currentIndex++;
         }
     }
-    
+
     return false;
 }
 
 string ExtractEventField(string eventStr, string fieldName)
 {
     int fieldPos = StringFind(eventStr, "\"" + fieldName + "\"");
-    if(fieldPos == -1) return "";
-    
+    if (fieldPos == -1)
+        return "";
+
     int colonPos = StringFind(eventStr, ":", fieldPos);
     int quoteStart = StringFind(eventStr, "\"", colonPos);
     int quoteEnd = StringFind(eventStr, "\"", quoteStart + 1);
-    
-    if(quoteStart == -1 || quoteEnd == -1) return "";
-    
+
+    if (quoteStart == -1 || quoteEnd == -1)
+        return "";
+
     return StringSubstr(eventStr, quoteStart + 1, quoteEnd - quoteStart - 1);
 }
 
@@ -1777,27 +2150,28 @@ string ExtractEventField(string eventStr, string fieldName)
 bool IsCurrencyRelevant(string country, string baseCurrency, string quoteCurrency)
 {
     string currencyMap[][2] = {
-        {"US", "USD"}, {"EU", "EUR"}, {"UK", "GBP"}, {"JP", "JPY"},
-        {"AU", "AUD"}, {"CA", "CAD"}, {"CH", "CHF"}, {"NZ", "NZD"}
-    };
-    
-    for(int i = 0; i < ArraySize(currencyMap); i++)
+        {"US", "USD"}, {"EU", "EUR"}, {"UK", "GBP"}, {"JP", "JPY"}, {"AU", "AUD"}, {"CA", "CAD"}, {"CH", "CHF"}, {"NZ", "NZD"}};
+
+    for (int i = 0; i < ArraySize(currencyMap); i++)
     {
-        if(currencyMap[i][0] == country)
+        if (currencyMap[i][0] == country)
         {
             string currency = currencyMap[i][1];
             return (currency == baseCurrency || currency == quoteCurrency);
         }
     }
-    
+
     return false;
 }
 
 int ImportanceToImpact(string importance)
 {
-    if(importance == "high") return 3;
-    if(importance == "medium") return 2;
-    if(importance == "low") return 1;
+    if (importance == "high")
+        return 3;
+    if (importance == "medium")
+        return 2;
+    if (importance == "low")
+        return 1;
     return 0;
 }
 
@@ -1805,32 +2179,33 @@ string GetSimulatedCalendarData(datetime fromTime, datetime toTime)
 {
     MqlDateTime fromStruct;
     TimeToStruct(fromTime, fromStruct);
-    
+
     string simulatedData = "{";
     simulatedData += "\"result\": {";
     simulatedData += "\"events\": [";
-    
+
     string currentSymbol = _Symbol;
     string baseCurrency = StringSubstr(currentSymbol, 0, 3);
     string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
-    
+
     string countries[];
-    if(baseCurrency == "USD" || quoteCurrency == "USD")
+    if (baseCurrency == "USD" || quoteCurrency == "USD")
         ArrayPushString(countries, "US");
-    if(baseCurrency == "EUR" || quoteCurrency == "EUR")
+    if (baseCurrency == "EUR" || quoteCurrency == "EUR")
         ArrayPushString(countries, "EU");
-    if(baseCurrency == "GBP" || quoteCurrency == "GBP")
+    if (baseCurrency == "GBP" || quoteCurrency == "GBP")
         ArrayPushString(countries, "UK");
-    if(baseCurrency == "JPY" || quoteCurrency == "JPY")
+    if (baseCurrency == "JPY" || quoteCurrency == "JPY")
         ArrayPushString(countries, "JP");
-    
-    for(int i = 0; i < ArraySize(countries); i++)
+
+    for (int i = 0; i < ArraySize(countries); i++)
     {
-        if(i > 0) simulatedData += ",";
-        
+        if (i > 0)
+            simulatedData += ",";
+
         datetime eventTime = fromTime + (i + 1) * 10800;
         string importance = (i % 3 == 0) ? "high" : ((i % 3 == 1) ? "medium" : "low");
-        
+
         simulatedData += "{";
         simulatedData += "\"title\": \"Simulated " + countries[i] + " Event " + IntegerToString(i + 1) + "\",";
         simulatedData += "\"country\": \"" + countries[i] + "\",";
@@ -1838,7 +2213,7 @@ string GetSimulatedCalendarData(datetime fromTime, datetime toTime)
         simulatedData += "\"importance\": \"" + importance + "\"";
         simulatedData += "}";
     }
-    
+
     simulatedData += "]}}";
     return simulatedData;
 }
@@ -1849,7 +2224,6 @@ void ArrayPushString(string &array[], string value)
     ArrayResize(array, size + 1);
     array[size] = value;
 }
-
 
 //==================================================================
 // Helper Function: Cleanup Expired Data
@@ -2577,7 +2951,7 @@ input bool UseFractalConfirmation = true; // require fractal MS confirmation
 input int FractalLookback = 30;           // lookback for fractals
 
 input double RiskPercentPerTrade = 50.0; // risk % per trade
-input double MaxSpreadPoints = 50;      // filter max spread (points)
+input double MaxSpreadPoints = 50;       // filter max spread (points)
 
 input int MagicNumber = 20250928;
 input double SlippagePips = 3; // slippage in pips
@@ -3223,15 +3597,15 @@ double GetBodyAndAvg(ENUM_TIMEFRAMES tf)
 //+------------------------------------------------------------------+
 //| Order Block Parameters                                          |
 //+------------------------------------------------------------------+
-input bool UseOrderBlock = true;           // Aktifkan order block detection
+input bool UseOrderBlock = true;          // Aktifkan order block detection
 input ENUM_TIMEFRAMES OB_TF1 = PERIOD_H1; // Timeframe 1 untuk OB
-input ENUM_TIMEFRAMES OB_TF2 = PERIOD_H4;  // Timeframe 2 untuk trend filter
+input ENUM_TIMEFRAMES OB_TF2 = PERIOD_H4; // Timeframe 2 untuk trend filter
 input double OB_BaseLot = 1.0;            // Lot dasar untuk OB
-input int OB_EMAPeriod1 = 50;              // EMA period untuk TF1
-input int OB_EMAPeriod2 = 50;              // EMA period untuk TF2
-input int OB_Levels = 3;                   // Jumlah level OB
-input double OB_ZoneBufferPips = 50;       // Buffer zona dalam pips
-input int OB_Lookback = 20;                // Lookback candles untuk OB
+input int OB_EMAPeriod1 = 50;             // EMA period untuk TF1
+input int OB_EMAPeriod2 = 50;             // EMA period untuk TF2
+input int OB_Levels = 3;                  // Jumlah level OB
+input double OB_ZoneBufferPips = 50;      // Buffer zona dalam pips
+input int OB_Lookback = 20;               // Lookback candles untuk OB
 
 //==================================================================
 // Helper Function: Get Trend Direction dari EMA
@@ -4130,7 +4504,7 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
 input bool UseStochastic = true;                 // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;   // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;  // Timeframe rendah untuk entry
 input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M30; // Timeframe tinggi untuk konfirmasi
 input int Stoch_KPeriod = 14;                    // %K period
 input int Stoch_DPeriod = 3;                     // %D period
