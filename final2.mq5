@@ -4,37 +4,37 @@
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
 #property copyright "Rey Riyan Sanjaya"
-#property link      "https://www.mql5.com"
-#property version   "1.00"
+#property link "https://www.mql5.com"
+#property version "1.00"
 
 //+------------------------------------------------------------------+
 //| Input Parameters (Super Agresif / Scalping)                     |
 //+------------------------------------------------------------------+
-input double BE_Pips        = 100;    // profit minimal untuk BE → cepat BE
-input double BE_Buffer      = 200;    // buffer setelah BE → lebih agresif
-input int LevelsCount       = 2;    // jumlah level trailing aktif
-input double TrailLevel1    = 100;    // level profit pip 1 → mulai trailing cepat
-input double TrailDistance1 = 60;    // trailing pip 1 → jarak sangat dekat
-input double TrailLevel2    = 200;   // level profit pip 2
-input double TrailDistance2 = 50;    // trailing pip 2
+input double BE_Pips = 100;                  // profit minimal untuk BE → cepat BE
+input double BE_Buffer = 200;                // buffer setelah BE → lebih agresif
+input int LevelsCount = 2;                   // jumlah level trailing aktif
+input double TrailLevel1 = 100;              // level profit pip 1 → mulai trailing cepat
+input double TrailDistance1 = 60;            // trailing pip 1 → jarak sangat dekat
+input double TrailLevel2 = 200;              // level profit pip 2
+input double TrailDistance2 = 50;            // trailing pip 2
 input ENUM_TIMEFRAMES ConfirmTF = PERIOD_M5; // TF konfirmasi trend → lebih cepat
-input bool UseTrendFilter   = false;  // matikan filter trend agar entry cepat
+input bool UseTrendFilter = false;           // matikan filter trend agar entry cepat
 
 // Risk Management Parameters (lebih fleksibel)
-input double RiskPercent    = 50.0;  // risiko per trade (% balance) → bisa ambil lot lebih besar
-input double MaxDailyDD     = 100.0; // max drawdown harian (%)
-input double MaxSpread      = 70;   // max spread (point) → longgar
-input double BaseLot        = 0.01;  // lot dasar
-input double MaxLot         = 100.0;  // lot maksimal → scale lebih agresif
-input int SL_Pips           = 100;   // default SL pips → sangat longgar
-input int TP_Pips           = 350;   // default TP pips → cepat close profit
+input double RiskPercent = 50.0; // risiko per trade (% balance) → bisa ambil lot lebih besar
+input double MaxDailyDD = 100.0; // max drawdown harian (%)
+input double MaxSpread = 70;     // max spread (point) → longgar
+input double BaseLot = 0.01;     // lot dasar
+input double MaxLot = 100.0;     // lot maksimal → scale lebih agresif
+input int SL_Pips = 100;         // default SL pips → sangat longgar
+input int TP_Pips = 350;         // default TP pips → cepat close profit
 
 // Tambahkan ini di bagian atas file, sebelum fungsi SendTradeAlert
 enum Dir
 {
-    DIR_NONE,    // 0 - No direction
-    DIR_BUY,     // 1 - Buy direction  
-    DIR_SELL     // 2 - Sell direction
+    DIR_NONE, // 0 - No direction
+    DIR_BUY,  // 1 - Buy direction
+    DIR_SELL  // 2 - Sell direction
 };
 
 //+------------------------------------------------------------------+
@@ -88,9 +88,9 @@ struct ChartPatternSignal
     bool isStrong;
     string patternName;
     double confidence;
-    double entryPrice;    // DITAMBAHKAN
-    double stopLoss;      // DITAMBAHKAN
-    double takeProfit;    // DITAMBAHKAN
+    double entryPrice; // DITAMBAHKAN
+    double stopLoss;   // DITAMBAHKAN
+    double takeProfit; // DITAMBAHKAN
 };
 
 // Tambahkan deklarasi struct ini di bagian atas file
@@ -114,73 +114,73 @@ private:
     int signalCount;
     double totalConfidence;
     Dir lastDirection;
-    
+
 public:
     SignalEngine() : signalCount(0), totalConfidence(0), lastDirection(DIR_NONE) {}
-    
+
     bool GetConsensusSignal(Dir &direction, double &confidence)
     {
         // Skip signal generation selama news period untuk avoid conflict
-        if(UseNewsImpact && IsNewsPeriod())
+        if (UseNewsImpact && IsNewsPeriod())
         {
             Print("Skipping regular signals during news period");
             return false;
         }
-        
+
         // Skip jika ada active order block trade
-        if(UseOrderBlock && HasActiveOBTrade())
+        if (UseOrderBlock && HasActiveOBTrade())
         {
             Print("Skipping regular signals - Active OB trade running");
             return false;
         }
         // Reset jika baru mulai
-        if(signalCount >= 20) // Reset setiap 10 sinyal
+        if (signalCount >= 20) // Reset setiap 10 sinyal
         {
             signalCount = 0;
             totalConfidence = 0;
         }
-        
+
         // Ambil sinyal dari berbagai sumber
         ChartPatternSignal patternSignal = GetChartPatternSignalUltimate(1, 20, PERIOD_M15);
         Dir momentumSignal = GetMomentumSignal();
         Dir macroSignal = GetMacroSignalUltimate();
-        
+
         // Ambil sinyal momentum pullback jika diaktifkan
         MomentumSignal pullbackSignal;
         bool hasPullbackSignal = false;
-        if(UseMomentumPullback)
+        if (UseMomentumPullback)
         {
             hasPullbackSignal = DetectMomentumPullback(MomentumTF, pullbackSignal, MomentumLookback);
         }
-        
+
         // Prioritaskan sinyal berdasarkan urutan prioritas
         Dir finalDirection = DIR_NONE;
         double baseConfidence = 0.0;
         string signalSource = "None";
-        
+
         // 1. Priority: Momentum Pullback (Highest)
-        if(hasPullbackSignal && pullbackSignal.found)
+        if (hasPullbackSignal && pullbackSignal.found)
         {
             finalDirection = pullbackSignal.dir;
             baseConfidence = 0.8;
             signalSource = "MomentumPullback";
         }
         // 2. Priority: Regular Momentum
-        else if(momentumSignal != DIR_NONE)
+        else if (momentumSignal != DIR_NONE)
         {
             finalDirection = momentumSignal;
             baseConfidence = 0.7;
             signalSource = "Momentum";
         }
         // 3. Priority: Pattern dengan konfirmasi macro
-        else if(patternSignal.signal != DIR_NONE && macroSignal == patternSignal.signal)
+        else if (patternSignal.signal != DIR_NONE && macroSignal == patternSignal.signal)
         {
             finalDirection = patternSignal.signal;
             baseConfidence = CalculatePatternConfidence(patternSignal);
             signalSource = "Pattern+Macro";
         }
         // 4. Priority: Pattern saja
-        else if(patternSignal.signal != DIR_NONE)
+        else if (patternSignal.signal != DIR_NONE)
         {
             finalDirection = patternSignal.signal;
             baseConfidence = CalculatePatternConfidence(patternSignal);
@@ -190,51 +190,51 @@ public:
         {
             return false; // No signal
         }
-        
+
         // Adjust confidence berdasarkan konfirmasi tambahan
         double adjustment = 0.0;
-        
-        if(macroSignal == finalDirection)
+
+        if (macroSignal == finalDirection)
             adjustment += 0.15; // Konfirmasi macro
-        else if(macroSignal != DIR_NONE)
-            adjustment -= 0.1;  // Kontradiksi macro
-            
-        if(patternSignal.signal == finalDirection && patternSignal.signal != DIR_NONE)
-            adjustment += 0.1;  // Konfirmasi pattern
-        
+        else if (macroSignal != DIR_NONE)
+            adjustment -= 0.1; // Kontradiksi macro
+
+        if (patternSignal.signal == finalDirection && patternSignal.signal != DIR_NONE)
+            adjustment += 0.1; // Konfirmasi pattern
+
         double finalConfidence = baseConfidence + adjustment;
-        finalConfidence = MathMax(finalConfidence, 0.1); // Minimal 10%
+        finalConfidence = MathMax(finalConfidence, 0.1);  // Minimal 10%
         finalConfidence = MathMin(finalConfidence, 0.95); // Maksimal 95%
-        
+
         // Update cumulative values
         signalCount++;
         totalConfidence += finalConfidence;
-        
+
         // Set output values
         direction = finalDirection;
         confidence = finalConfidence;
         lastDirection = direction;
-        
-        PrintFormat("Signal Engine: %s signal with %.2f confidence (Source:%s, Momentum:%s, Pattern:%s, Macro:%s)", 
-                (direction==DIR_BUY?"BUY":(direction==DIR_SELL?"SELL":"NONE")), 
-                confidence, signalSource,
-                (momentumSignal==DIR_BUY?"BUY":(momentumSignal==DIR_SELL?"SELL":"NONE")),
-                (patternSignal.signal==DIR_BUY?"BUY":(patternSignal.signal==DIR_SELL?"SELL":"NONE")),
-                (macroSignal==DIR_BUY?"BUY":(macroSignal==DIR_SELL?"SELL":"NEUTRAL")));
-                
+
+        PrintFormat("Signal Engine: %s signal with %.2f confidence (Source:%s, Momentum:%s, Pattern:%s, Macro:%s)",
+                    (direction == DIR_BUY ? "BUY" : (direction == DIR_SELL ? "SELL" : "NONE")),
+                    confidence, signalSource,
+                    (momentumSignal == DIR_BUY ? "BUY" : (momentumSignal == DIR_SELL ? "SELL" : "NONE")),
+                    (patternSignal.signal == DIR_BUY ? "BUY" : (patternSignal.signal == DIR_SELL ? "SELL" : "NONE")),
+                    (macroSignal == DIR_BUY ? "BUY" : (macroSignal == DIR_SELL ? "SELL" : "NEUTRAL")));
+
         return true;
     }
 
     // Helper function untuk cek active OB trades
     bool HasActiveOBTrade()
     {
-        for(int i = 0; i < PositionsTotal(); i++)
+        for (int i = 0; i < PositionsTotal(); i++)
         {
             ulong ticket = PositionGetTicket(i);
-            if(ticket > 0)
+            if (ticket > 0)
             {
                 string comment = PositionGetString(POSITION_COMMENT);
-                if(StringFind(comment, "OB_") >= 0) // Trades dengan comment OB
+                if (StringFind(comment, "OB_") >= 0) // Trades dengan comment OB
                     return true;
             }
         }
@@ -244,31 +244,31 @@ public:
     double CalculatePatternConfidence(ChartPatternSignal &signal)
     {
         double baseConfidence = 0.5; // Base confidence
-        
+
         // Adjust based on pattern strength
-        if(signal.isStrong)
+        if (signal.isStrong)
             baseConfidence += 0.3;
         else
             baseConfidence += 0.1;
-            
+
         // Adjust based on pattern type
-        if(signal.patternName == "Double Top" || signal.patternName == "Double Bottom")
+        if (signal.patternName == "Double Top" || signal.patternName == "Double Bottom")
             baseConfidence += 0.1;
-        else if(signal.patternName == "Head & Shoulders" || signal.patternName == "Inverse H&S")
+        else if (signal.patternName == "Head & Shoulders" || signal.patternName == "Inverse H&S")
             baseConfidence += 0.15;
-        else if(signal.patternName == "Triangle")
+        else if (signal.patternName == "Triangle")
             baseConfidence += 0.1;
-        else if(signal.patternName == "Gartley" || signal.patternName == "Bat" || 
-                signal.patternName == "Butterfly" || signal.patternName == "Crab")
+        else if (signal.patternName == "Gartley" || signal.patternName == "Bat" ||
+                 signal.patternName == "Butterfly" || signal.patternName == "Crab")
             baseConfidence += 0.2; // Harmonic patterns get higher confidence
-            
+
         // Tambahan: Adjust berdasarkan Iceberg detection
         IcebergLevel iceberg = DetectIcebergAdvanced(0); // Cek candle terbaru
-        if(iceberg == ICE_STRONG)
+        if (iceberg == ICE_STRONG)
             baseConfidence += 0.15;
-        else if(iceberg == ICE_WEAK)
+        else if (iceberg == ICE_WEAK)
             baseConfidence += 0.05;
-            
+
         return MathMin(baseConfidence, 0.95); // Cap at 95%
     }
 };
@@ -278,96 +278,100 @@ public:
 //+------------------------------------------------------------------+
 namespace RiskManager
 {
-   // --- Hitung balance, equity, margin ---
-   double GetBalance() { return AccountInfoDouble(ACCOUNT_BALANCE); }
-   double GetEquity()  { return AccountInfoDouble(ACCOUNT_EQUITY); }
-   double GetFreeMargin() { return AccountInfoDouble(ACCOUNT_MARGIN_FREE); } // FIXED
-   double GetMarginLevel() { return AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); }
+    // --- Hitung balance, equity, margin ---
+    double GetBalance() { return AccountInfoDouble(ACCOUNT_BALANCE); }
+    double GetEquity() { return AccountInfoDouble(ACCOUNT_EQUITY); }
+    double GetFreeMargin() { return AccountInfoDouble(ACCOUNT_MARGIN_FREE); } // FIXED
+    double GetMarginLevel() { return AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); }
 
-   // --- Hitung nilai 1 pip ---
-   double GetPipValue(string symbol=NULL)
-   {
-      if(symbol==NULL) symbol = _Symbol;
-      return SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-   }
+    // --- Hitung nilai 1 pip ---
+    double GetPipValue(string symbol = NULL)
+    {
+        if (symbol == NULL)
+            symbol = _Symbol;
+        return SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+    }
 
-   // --- Hitung lot berdasarkan risk% dan SL (dalam pips) ---
-   double CalculateLotByRisk(double stopLossPips, string symbol=NULL)
-   {
-      if(symbol==NULL) symbol = _Symbol;
-      double balance   = GetBalance();
-      double riskMoney = balance * (RiskPercent/100.0);
-      double pipValue  = GetPipValue(symbol);
-      if(pipValue<=0) pipValue=0.0001;
+    // --- Hitung lot berdasarkan risk% dan SL (dalam pips) ---
+    double CalculateLotByRisk(double stopLossPips, string symbol = NULL)
+    {
+        if (symbol == NULL)
+            symbol = _Symbol;
+        double balance = GetBalance();
+        double riskMoney = balance * (RiskPercent / 100.0);
+        double pipValue = GetPipValue(symbol);
+        if (pipValue <= 0)
+            pipValue = 0.0001;
 
-      double lot = riskMoney / (stopLossPips * pipValue);
-      return NormalizeDouble(lot, 2);
-   }
+        double lot = riskMoney / (stopLossPips * pipValue);
+        return NormalizeDouble(lot, 2);
+    }
 
-   // --- Hitung lot dinamis dari confidence + risk ---
-   double GetDynamicLot(double confidence, double stopLossPips=30, string symbol=NULL)
-   {
-      if(symbol==NULL) symbol = _Symbol;
+    // --- Hitung lot dinamis dari confidence + risk ---
+    double GetDynamicLot(double confidence, double stopLossPips = 30, string symbol = NULL)
+    {
+        if (symbol == NULL)
+            symbol = _Symbol;
 
-      // Hitung lot dari confidence
-      double lotFromConfidence = BaseLot + (MaxLot - BaseLot) * confidence;
+        // Hitung lot dari confidence
+        double lotFromConfidence = BaseLot + (MaxLot - BaseLot) * confidence;
 
-      // Hitung lot dari risk %
-      double lotByRisk = CalculateLotByRisk(stopLossPips, symbol);
+        // Hitung lot dari risk %
+        double lotByRisk = CalculateLotByRisk(stopLossPips, symbol);
 
-      // Ambil lot terkecil (biar aman)
-      double lot = MathMin(lotFromConfidence, lotByRisk);
+        // Ambil lot terkecil (biar aman)
+        double lot = MathMin(lotFromConfidence, lotByRisk);
 
-      // --- Validasi margin ---
-      double freeMargin = GetFreeMargin();
-      double marginReq  = 0.0;
-      if(!OrderCalcMargin(ORDER_TYPE_BUY, symbol, lot, SymbolInfoDouble(symbol, SYMBOL_ASK), marginReq))
-         marginReq = 0;
+        // --- Validasi margin ---
+        double freeMargin = GetFreeMargin();
+        double marginReq = 0.0;
+        if (!OrderCalcMargin(ORDER_TYPE_BUY, symbol, lot, SymbolInfoDouble(symbol, SYMBOL_ASK), marginReq))
+            marginReq = 0;
 
-      if(marginReq > freeMargin * 0.8) // Gunakan 80% free margin maksimal
-      {
-         // Turunkan lot biar cukup margin
-         lot = (freeMargin * 0.8 / marginReq) * lot;
-      }
+        if (marginReq > freeMargin * 0.8) // Gunakan 80% free margin maksimal
+        {
+            // Turunkan lot biar cukup margin
+            lot = (freeMargin * 0.8 / marginReq) * lot;
+        }
 
-      // --- Batasi maxLot ---
-      lot = MathMin(lot, MaxLot);
-      lot = MathMax(lot, BaseLot); // Minimal base lot
+        // --- Batasi maxLot ---
+        lot = MathMin(lot, MaxLot);
+        lot = MathMax(lot, BaseLot); // Minimal base lot
 
-      return NormalizeDouble(lot, 2);
-   }
+        return NormalizeDouble(lot, 2);
+    }
 
-   // --- Cek apakah boleh entry ---
-   bool CanOpenTrade()
-   {
-      // Cek margin level
-      double marginLevel = GetMarginLevel();
-      if(marginLevel > 0 && marginLevel < 200) 
-      {
-         Print("Margin level too low: ", marginLevel);
-         return false;
-      }
+    // --- Cek apakah boleh entry ---
+    bool CanOpenTrade()
+    {
+        // Cek margin level
+        double marginLevel = GetMarginLevel();
+        if (marginLevel > 0 && marginLevel < 200)
+        {
+            Print("Margin level too low: ", marginLevel);
+            return false;
+        }
 
-      // Cek spread
-      double spread = (double)(SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
-      if(spread > MaxSpread) 
-      {
-         Print("Spread too high: ", spread);
-         return false;
-      }
+        // Cek spread
+        double spread = (double)(SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
+        if (spread > MaxSpread)
+        {
+            Print("Spread too high: ", spread);
+            return false;
+        }
 
-      // Cek max drawdown harian
-      static double equityStart = GetEquity();
-      double currentEquity = GetEquity();
-      double ddPercent = ((equityStart - currentEquity) / equityStart) * 100.0;
-      if(ddPercent > MaxDailyDD) 
-      {
-         Print("Daily drawdown limit reached: ", ddPercent);
-         return false;
-      }
+        // Cek max drawdown harian
+        static double equityStart = GetEquity();
+        double currentEquity = GetEquity();
+        double ddPercent = ((equityStart - currentEquity) / equityStart) * 100.0;
+        if (ddPercent > MaxDailyDD)
+        {
+            Print("Daily drawdown limit reached: ", ddPercent);
+            return false;
+        }
 
-      return true;
-   }
+        return true;
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -375,66 +379,71 @@ namespace RiskManager
 //+------------------------------------------------------------------+
 void ExecuteBuy(double lot, int slPips, int tpPips)
 {
-   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-   
-   // Pastikan SL minimal 30 pips untuk menghindari noise market
-   slPips = MathMax(slPips, 30);
-   tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
-   
-   double sl  = ask - slPips * _Point;
-   double tp  = ask + tpPips * _Point;
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   MqlTradeRequest request;
-   MqlTradeResult  result;
-   ZeroMemory(request);
+    // Pastikan SL minimal 30 pips untuk menghindari noise market
+    //    slPips = MathMax(slPips, 30);
+    //    tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
 
-   request.action   = TRADE_ACTION_DEAL;
-   request.symbol   = _Symbol;
-   request.type     = ORDER_TYPE_BUY;
-   request.volume   = lot;
-   request.price    = ask;
-   request.sl       = sl;
-   request.tp       = tp;
-   request.deviation= 10;
-   request.magic    = 12345;
-   request.comment  = "AutoTrade Buy";
+    //    double sl  = ask - slPips * _Point;
+    //    double tp  = ask + tpPips * _Point;
 
-   if(!OrderSend(request,result))
-      Print("❌ Buy failed: ", result.retcode);
-   else
-      Print("✅ Buy executed @", ask, " lot=", lot, " SL=", sl, " TP=", tp, " SL Pips=", slPips);
+    double sl = slPips;
+    double tp = tpPips;
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = _Symbol;
+    request.type = ORDER_TYPE_BUY;
+    request.volume = lot;
+    request.price = ask;
+    request.sl = sl;
+    request.tp = tp;
+    request.deviation = 10;
+    request.magic = 12345;
+    request.comment = "AutoTrade Buy";
+
+    if (!OrderSend(request, result))
+        Print("❌ Buy failed: ", result.retcode);
+    else
+        Print("✅ Buy executed @", ask, " lot=", lot, " SL=", sl, " TP=", tp, " SL Pips=", slPips);
 }
 
 void ExecuteSell(double lot, int slPips, int tpPips)
 {
-   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   
-   // Pastikan SL minimal 30 pips untuk menghindari noise market
-   slPips = MathMax(slPips, 30);
-   tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
-   
-   double sl  = bid + slPips * _Point;
-   double tp  = bid - tpPips * _Point;
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-   MqlTradeRequest request;
-   MqlTradeResult  result;
-   ZeroMemory(request);
+    // Pastikan SL minimal 30 pips untuk menghindari noise market
+    //    slPips = MathMax(slPips, 30);
+    //    tpPips = MathMax(tpPips, 45); // Minimal RR 1:1.5
 
-   request.action   = TRADE_ACTION_DEAL;
-   request.symbol   = _Symbol;
-   request.type     = ORDER_TYPE_SELL;
-   request.volume   = lot;
-   request.price    = bid;
-   request.sl       = sl;
-   request.tp       = tp;
-   request.deviation= 10;
-   request.magic    = 12345;
-   request.comment  = "AutoTrade Sell";
+    //    double sl  = bid + slPips * _Point;
+    //    double tp  = bid - tpPips * _Point;
 
-   if(!OrderSend(request,result))
-      Print("❌ Sell failed: ", result.retcode);
-   else
-      Print("✅ Sell executed @", bid, " lot=", lot, " SL=", sl, " TP=", tp, " SL Pips=", slPips);
+    double sl = slPips;
+    double tp = tpPips;
+
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = _Symbol;
+    request.type = ORDER_TYPE_SELL;
+    request.volume = lot;
+    request.price = bid;
+    request.sl = sl;
+    request.tp = tp;
+    request.deviation = 10;
+    request.magic = 12345;
+    request.comment = "AutoTrade Sell";
+
+    if (!OrderSend(request, result))
+        Print("❌ Sell failed: ", result.retcode);
+    else
+        Print("✅ Sell executed @", bid, " lot=", lot, " SL=", sl, " TP=", tp, " SL Pips=", slPips);
 }
 //+------------------------------------------------------------------+
 //| Trailing Stop Functions                                         |
@@ -453,13 +462,14 @@ struct TrailingUltimateParams
 //===================== FUNGSI TREND FILTER =======================
 Dir GetTrendDirection(ENUM_TIMEFRAMES tf)
 {
-    double emaFast = iMA(_Symbol,tf,9,0,MODE_EMA,PRICE_CLOSE);
-    double emaSlow = iMA(_Symbol,tf,21,0,MODE_EMA,PRICE_CLOSE);
-    if(emaFast>emaSlow) return DIR_BUY;
-    if(emaFast<emaSlow) return DIR_SELL;
+    double emaFast = iMA(_Symbol, tf, 9, 0, MODE_EMA, PRICE_CLOSE);
+    double emaSlow = iMA(_Symbol, tf, 21, 0, MODE_EMA, PRICE_CLOSE);
+    if (emaFast > emaSlow)
+        return DIR_BUY;
+    if (emaFast < emaSlow)
+        return DIR_SELL;
     return DIR_NONE;
 }
-
 
 //+------------------------------------------------------------------+
 //| Trailing Stop & Break-Even Management (FINAL FIX)              |
@@ -469,15 +479,17 @@ void ManageTrailingBreakCloseUltimate()
     TrailingUltimateParams params;
     params.bePips = BE_Pips;
     params.beBuffer = BE_Buffer;
-    params.trailLevels[0] = TrailLevel1; params.trailDistances[0] = TrailDistance1;
-    params.trailLevels[1] = TrailLevel2; params.trailDistances[1] = TrailDistance2;
+    params.trailLevels[0] = TrailLevel1;
+    params.trailDistances[0] = TrailDistance1;
+    params.trailLevels[1] = TrailLevel2;
+    params.trailDistances[1] = TrailDistance2;
     params.levelsCount = LevelsCount;
     params.tfConfirm = ConfirmTF;
     params.useTrendFilter = UseTrendFilter;
 
-    for(int i = PositionsTotal()-1; i >= 0; i--)
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
     {
-        if(PositionGetTicket(i))
+        if (PositionGetTicket(i))
         {
             ulong ticket = PositionGetInteger(POSITION_TICKET);
             long type = PositionGetInteger(POSITION_TYPE);
@@ -485,29 +497,29 @@ void ManageTrailingBreakCloseUltimate()
             double currentSL = PositionGetDouble(POSITION_SL);
             double currentTP = PositionGetDouble(POSITION_TP);
             double price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-            
+
             // Hitung profit dalam pips
             double profitPips = 0;
-            if(type == POSITION_TYPE_BUY)
+            if (type == POSITION_TYPE_BUY)
                 profitPips = (price - entry) / _Point;
-            else if(type == POSITION_TYPE_SELL)
+            else if (type == POSITION_TYPE_SELL)
                 profitPips = (entry - price) / _Point;
 
             double newSL = currentSL;
             bool slChanged = false;
 
             // --- Break-Even Logic ---
-            if(profitPips >= params.bePips && currentSL != entry)
+            if (profitPips >= params.bePips && currentSL != entry)
             {
                 double beLevel = 0;
-                if(type == POSITION_TYPE_BUY)
+                if (type == POSITION_TYPE_BUY)
                     beLevel = entry + (params.beBuffer * _Point);
-                else if(type == POSITION_TYPE_SELL)
+                else if (type == POSITION_TYPE_SELL)
                     beLevel = entry - (params.beBuffer * _Point);
-                
+
                 // Only move to BE if it's an improvement
-                if((type == POSITION_TYPE_BUY && beLevel > currentSL) ||
-                   (type == POSITION_TYPE_SELL && beLevel < currentSL))
+                if ((type == POSITION_TYPE_BUY && beLevel > currentSL) ||
+                    (type == POSITION_TYPE_SELL && beLevel < currentSL))
                 {
                     newSL = beLevel;
                     slChanged = true;
@@ -515,26 +527,26 @@ void ManageTrailingBreakCloseUltimate()
             }
 
             // --- Trailing Stop Logic ---
-            for(int lvl = 0; lvl < params.levelsCount; lvl++)
+            for (int lvl = 0; lvl < params.levelsCount; lvl++)
             {
-                if(profitPips >= params.trailLevels[lvl])
+                if (profitPips >= params.trailLevels[lvl])
                 {
                     double trailSL = 0;
                     double trailDistance = params.trailDistances[lvl] * _Point;
-                    
-                    if(type == POSITION_TYPE_BUY)
+
+                    if (type == POSITION_TYPE_BUY)
                     {
                         trailSL = price - trailDistance;
-                        if(trailSL > newSL && (price - trailSL) > (10 * _Point)) // Minimal 1 pip distance
+                        if (trailSL > newSL && (price - trailSL) > (10 * _Point)) // Minimal 1 pip distance
                         {
                             newSL = trailSL;
                             slChanged = true;
                         }
                     }
-                    else if(type == POSITION_TYPE_SELL)
+                    else if (type == POSITION_TYPE_SELL)
                     {
                         trailSL = price + trailDistance;
-                        if(trailSL < newSL && (trailSL - price) > (10 * _Point)) // Minimal 1 pip distance
+                        if (trailSL < newSL && (trailSL - price) > (10 * _Point)) // Minimal 1 pip distance
                         {
                             newSL = trailSL;
                             slChanged = true;
@@ -544,7 +556,7 @@ void ManageTrailingBreakCloseUltimate()
             }
 
             // --- Update SL jika diperlukan ---
-            if(slChanged && newSL != currentSL)
+            if (slChanged && newSL != currentSL)
             {
                 MqlTradeRequest req;
                 MqlTradeResult res;
@@ -557,17 +569,16 @@ void ManageTrailingBreakCloseUltimate()
                 req.tp = currentTP;
                 req.deviation = 10;
 
-                if(OrderSend(req, res))
+                if (OrderSend(req, res))
                 {
-                    PrintFormat("✅ SL Updated: Ticket %d, New SL: %.5f, Profit: %.1f pips", 
-                               ticket, newSL, profitPips/10.0);
+                    PrintFormat("✅ SL Updated: Ticket %d, New SL: %.5f, Profit: %.1f pips",
+                                ticket, newSL, profitPips / 10.0);
                 }
                 else
                 {
                     PrintFormat("❌ SL Update Failed: Ticket %d, Error: %d", ticket, GetLastError());
                 }
             }
-            
         }
     }
 }
@@ -577,32 +588,32 @@ void ManageTrailingBreakCloseUltimate()
 //+------------------------------------------------------------------+
 void ExecuteTradeFromSignals()
 {
-   Dir    direction;
-   double confidence;
+    Dir direction;
+    double confidence;
 
-   // Ambil sinyal konsensus dari SignalEngine
-   if(!signalEngine.GetConsensusSignal(direction, confidence))
-      return; // tidak ada sinyal
+    // Ambil sinyal konsensus dari SignalEngine
+    if (!signalEngine.GetConsensusSignal(direction, confidence))
+        return; // tidak ada sinyal
 
-   // ✅ Cek proteksi RiskManager sebelum entry
-   if(!RiskManager::CanOpenTrade())
-   {
-      Print("⚠️ Kondisi tidak aman, tidak entry (margin/spread/DD limit).");
-      return;
-   }
+    // ✅ Cek proteksi RiskManager sebelum entry
+    if (!RiskManager::CanOpenTrade())
+    {
+        Print("⚠️ Kondisi tidak aman, tidak entry (margin/spread/DD limit).");
+        return;
+    }
 
-   // Hitung lot dinamis dengan proteksi margin
-   double lotSize = RiskManager::GetDynamicLot(confidence, SL_Pips);
+    // Hitung lot dinamis dengan proteksi margin
+    double lotSize = RiskManager::GetDynamicLot(confidence, SL_Pips);
 
-   // Entry BUY / SELL sesuai sinyal
-   if(direction == DIR_BUY)
-   {
-      ExecuteBuy(lotSize, SL_Pips, TP_Pips);
-   }
-   else if(direction == DIR_SELL)
-   {
-      ExecuteSell(lotSize, SL_Pips, TP_Pips);
-   }
+    // Entry BUY / SELL sesuai sinyal
+    if (direction == DIR_BUY)
+    {
+        ExecuteBuy(lotSize, SL_Pips, TP_Pips);
+    }
+    else if (direction == DIR_SELL)
+    {
+        ExecuteSell(lotSize, SL_Pips, TP_Pips);
+    }
 }
 
 //+------------------------------------------------------------------+
@@ -612,43 +623,43 @@ int OnInit()
 {
     Print("Chart Pattern Trading System Started");
     Print("Risk Management: ", RiskPercent, "% per trade");
-    
+
     // Initialize dashboard timer jika diaktifkan
-    if(EnableDashboard)
+    if (EnableDashboard)
     {
         EventSetTimer(1);
         Print("Dashboard System Activated with Timer");
         ObjectsDeleteAll(0, -1, OBJ_LABEL);
     }
-    
+
     // Test Telegram connection
-    if(Dashboard_SendTelegram && EnableTelegram)
+    if (Dashboard_SendTelegram && EnableTelegram)
     {
-        if(TelegramBotToken == "" || TelegramBotToken == "8470744929:AAHJ02vl-RUxRbVdc_kBZuSZdPx_Qzvtnr8")
+        if (TelegramBotToken == "" || TelegramBotToken == "8470744929:AAHJ02vl-RUxRbVdc_kBZuSZdPx_Qzvtnr8")
         {
             Print("❌ Telegram: Please set your Bot Token in inputs");
         }
-        else if(TelegramChatID == "" || TelegramChatID == "--1002864046051")
+        else if (TelegramChatID == "" || TelegramChatID == "--1002864046051")
         {
             Print("❌ Telegram: Please set your Chat ID in inputs");
         }
         else
         {
             Print("✅ Telegram: Testing connection...");
-            
+
             // Test message
             string testMsg = "🤖 *TRADING SYSTEM STARTED* 🤖\n";
             testMsg += "Symbol: " + _Symbol + "\n";
             testMsg += "Account: " + AccountInfoString(ACCOUNT_COMPANY) + "\n";
             testMsg += "Balance: $" + DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE), 2) + "\n";
             testMsg += "System: Ultimate Trading EA v2.0\n";
-            testMsg += "Time: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS);
-            
+            testMsg += "Time: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS);
+
             SendTelegramMessage(testMsg);
         }
     }
-    
-    return(INIT_SUCCEEDED);
+
+    return (INIT_SUCCEEDED);
 }
 
 //+------------------------------------------------------------------+
@@ -656,24 +667,24 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
-//---
+    //---
     // Hapus semua objek chart dari dashboard
-    if(EnableDashboard)
+    if (EnableDashboard)
     {
         ObjectsDeleteAll(0, -1, OBJ_LABEL);
         EventKillTimer();
         Print("Dashboard Cleaned Up");
     }
-    
+
     // Send shutdown message ke Telegram
-    if(Dashboard_SendTelegram && TelegramChatID != TelegramChatID)
+    if (Dashboard_SendTelegram && TelegramChatID != TelegramChatID)
     {
         string shutdownMsg = "🛑 *TRADING SYSTEM STOPPED* 🛑\n";
         shutdownMsg += "Reason: " + GetUninitReasonText(reason) + "\n";
-        shutdownMsg += "Time: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS);
+        shutdownMsg += "Time: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS);
         SendTelegramMessage(shutdownMsg);
     }
-    
+
     Print("Chart Pattern Trading System Stopped");
 }
 
@@ -682,16 +693,24 @@ void OnDeinit(const int reason)
 //==================================================================
 string GetUninitReasonText(int reason)
 {
-    switch(reason)
+    switch (reason)
     {
-        case REASON_ACCOUNT:    return "Account changed";
-        case REASON_CHARTCHANGE:return "Chart changed";
-        case REASON_CHARTCLOSE: return "Chart closed";
-        case REASON_PARAMETERS: return "Parameters changed";
-        case REASON_RECOMPILE:  return "EA recompiled";
-        case REASON_REMOVE:     return "EA removed";
-        case REASON_TEMPLATE:   return "Template changed";
-        default:                return "Unknown reason";
+    case REASON_ACCOUNT:
+        return "Account changed";
+    case REASON_CHARTCHANGE:
+        return "Chart changed";
+    case REASON_CHARTCLOSE:
+        return "Chart closed";
+    case REASON_PARAMETERS:
+        return "Parameters changed";
+    case REASON_RECOMPILE:
+        return "EA recompiled";
+    case REASON_REMOVE:
+        return "EA removed";
+    case REASON_TEMPLATE:
+        return "Template changed";
+    default:
+        return "Unknown reason";
     }
 }
 //+------------------------------------------------------------------+
@@ -703,46 +722,85 @@ SignalEngine signalEngine; // Instance SignalEngine
 datetime lastTradeTime = 0;
 int minSecondsBetweenTrades = 0; // Minimal 60 detik antara trade
 
+// Fungsi untuk MQL5 - menghitung position yang sesuai
+int GetCurrentTicketCount()
+{
+    int count = 0;
+    for(int i = 0; i < PositionsTotal(); i++)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if(ticket > 0)
+        {
+            string symbol = PositionGetString(POSITION_SYMBOL);
+            long magic = PositionGetInteger(POSITION_MAGIC);
+            
+            if(symbol == _Symbol && magic == 12345) // Ganti dengan magic number EA Anda
+            {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
 void OnTick()
 {
-//---
+    //---
     // ==================== PROFIT BOOSTER FILTER ====================
-    if(!AdvancedProfitFilter()) return;
+    if (!AdvancedProfitFilter())
+        return;
 
     // ==================== DASHBOARD UPDATE ====================
     static datetime lastDashboardCheck = 0;
-    if(EnableDashboard && (TimeCurrent() - lastDashboardCheck >= 5))
+    static int lastTicketCount = 0;
+
+    if (EnableDashboard)
     {
-        CollectActiveSignals();
-        UpdateSignalsUltimateLive2();
-        lastDashboardCheck = TimeCurrent();
+        int currentTicketCount = GetCurrentTicketCount();
+        bool newEntryDetected = (currentTicketCount > lastTicketCount);
+        bool timeBasedUpdate = (TimeCurrent() - lastDashboardCheck >= 5);
+
+        if (newEntryDetected || timeBasedUpdate)
+        {
+            CollectActiveSignals();
+            UpdateSignalsUltimateLive2();
+            lastDashboardCheck = TimeCurrent();
+            lastTicketCount = currentTicketCount; // Update count setelah eksekusi
+        }
     }
 
     // ==================== ENTRY COOLDOWN CHECK ====================
-    if(TimeCurrent() - lastTradeTime < minSecondsBetweenTrades) return;
+    if (TimeCurrent() - lastTradeTime < minSecondsBetweenTrades)
+        return;
 
     // ==================== POSITION LIMIT CHECK ====================
-    if(PositionsTotal() >= 3) return; // Reduced untuk fokus quality
+    if (PositionsTotal() >= 10)
+        return; // Reduced untuk fokus quality
 
     // ==================== ULTRA TIER 1: SUPER HIGH PROBABILITY ====================
     bool ultraTierExecuted = ExecuteUltraTier1();
-    if(ultraTierExecuted) return;
+    if (ultraTierExecuted)
+        return;
 
     // ==================== ENHANCED TIER 5:  ====================
     bool momentumTierExecuted = ExecuteMomentumTier5();
-    if(momentumTierExecuted) return;
+    if (momentumTierExecuted)
+        return;
 
     // ==================== POWER TIER 2: MOMENTUM & CANDLE SCALPING ====================
     bool powerTierExecuted = ExecutePowerTier2();
-    if(powerTierExecuted) return;
+    if (powerTierExecuted)
+        return;
 
     // ==================== ENHANCED TIER 3: STOCHASTIC POWER ====================
     bool enhancedTierExecuted = ExecuteEnhancedTier3();
-    if(enhancedTierExecuted) return;
+    if (enhancedTierExecuted)
+        return;
 
     // ==================== ENHANCED TIER 4:  ====================
     bool advancedTierExecuted = ExecuteAdvancedTier4();
-    if(advancedTierExecuted) return;
+    if (advancedTierExecuted)
+        return;
 
     // ==================== BACKUP SYSTEM ====================
     ExecuteBackupSystem();
@@ -755,18 +813,18 @@ void OnTick()
 bool AdvancedProfitFilter()
 {
     Print("🔥 MAX PROFIT MODE - AUTO APPROVE");
-    
+
     // Hanya filter dasar saja - auto approve hampir semua
     double atr = iATR(_Symbol, PERIOD_M5, 14);
     double atrPercent = (atr / SymbolInfoDouble(_Symbol, SYMBOL_BID)) * 100;
-    
+
     // Auto reject hanya jika market benar2 mati
-    if(atrPercent < 0.003) 
+    if (atrPercent < 0.003)
     {
         Print("⚡ Market extremely quiet - waiting for volatility");
         return false; // Hanya kondisi ini yang di-reject
     }
-    
+
     // Selain itu, APPROVE SEMUA
     Print("✅ AUTO-APPROVED: High Profit Opportunity");
     return true;
@@ -775,28 +833,28 @@ bool ExecuteUltraTier1()
 {
     // 1. ORDER BLOCK SUPER FILTERED
     static datetime lastOBCheck = 0;
-    if(UseOrderBlock && (TimeCurrent() - lastOBCheck >= 3600))
+    if (UseOrderBlock && (TimeCurrent() - lastOBCheck >= 3600))
     {
         OBSignal obSignal = DetectOrderBlockPro(OB_BaseLot, OB_EMAPeriod1, OB_EMAPeriod2, OB_Levels, OB_ZoneBufferPips, OB_Lookback);
-        
-        if(obSignal.signal != DIR_NONE && obSignal.isStrong)
+
+        if (obSignal.signal != DIR_NONE && obSignal.isStrong)
         {
             double rrRatio = CalculateRRRatio(obSignal);
-            if(rrRatio >= 2.5)
+            if (rrRatio >= 2.5)
             {
-                double optimalLot = RiskManager::GetDynamicLot(0.8, 
-                    (int)((obSignal.entryPrice - obSignal.stopLoss) / _Point / 10));
-                
+                double optimalLot = RiskManager::GetDynamicLot(0.8,
+                                                               (int)((obSignal.entryPrice - obSignal.stopLoss) / _Point / 10));
+
                 // PERBAIKAN: Direct execution tanpa if condition
-                if(obSignal.signal == DIR_BUY)
+                if (obSignal.signal == DIR_BUY)
                 {
                     int slPips = (int)((obSignal.entryPrice - obSignal.stopLoss) / _Point / 10);
                     int tpPips = (int)((obSignal.takeProfit - obSignal.entryPrice) / _Point / 10);
-                    ExecuteBuy(optimalLot, slPips, tpPips);  // LANGSUNG EXECUTE
-                    
-                    if(Dashboard_SendTelegram)
+                    ExecuteBuy(optimalLot, slPips, tpPips); // LANGSUNG EXECUTE
+
+                    if (Dashboard_SendTelegram)
                         SendTradeAlert(_Symbol, DIR_BUY, optimalLot, obSignal.entryPrice, obSignal.stopLoss, obSignal.takeProfit, "ORDER BLOCK ULTRA");
-                    
+
                     PrintFormat("🏆 ORDER BLOCK ULTRA: BUY | RR: 1:%.1f | Super Filtered", rrRatio);
                     lastTradeTime = TimeCurrent();
                     lastOBCheck = TimeCurrent();
@@ -806,11 +864,11 @@ bool ExecuteUltraTier1()
                 {
                     int slPips = (int)((obSignal.stopLoss - obSignal.entryPrice) / _Point / 10);
                     int tpPips = (int)((obSignal.entryPrice - obSignal.takeProfit) / _Point / 10);
-                    ExecuteSell(optimalLot, slPips, tpPips);  // LANGSUNG EXECUTE
-                    
-                    if(Dashboard_SendTelegram)
+                    ExecuteSell(optimalLot, slPips, tpPips); // LANGSUNG EXECUTE
+
+                    if (Dashboard_SendTelegram)
                         SendTradeAlert(_Symbol, DIR_SELL, optimalLot, obSignal.entryPrice, obSignal.stopLoss, obSignal.takeProfit, "ORDER BLOCK ULTRA");
-                    
+
                     PrintFormat("🏆 ORDER BLOCK ULTRA: SELL | RR: 1:%.1f | Super Filtered", rrRatio);
                     lastTradeTime = TimeCurrent();
                     lastOBCheck = TimeCurrent();
@@ -823,19 +881,19 @@ bool ExecuteUltraTier1()
 
     // 2. PRICE ACTION ENHANCED - PERBAIKAN YANG SAMA
     static datetime lastPACheck = 0;
-    if(UsePriceAction && (TimeCurrent() - lastPACheck >= 4))
+    if (UsePriceAction && (TimeCurrent() - lastPACheck >= 4))
     {
         PA_Signal paSignal = DetectPriceAction_MTF(_Symbol, 2);
-        
-        if(paSignal.found && paSignal.lotLevel >= 3 && IsSignalInTrend(paSignal.direction))
+
+        if (paSignal.found && paSignal.lotLevel >= 3 && IsSignalInTrend(paSignal.direction))
         {
-            ExecutePriceActionTrade(paSignal);  // LANGSUNG EXECUTE
-            
-            if(Dashboard_SendTelegram)
+            ExecutePriceActionTrade(paSignal); // LANGSUNG EXECUTE
+
+            if (Dashboard_SendTelegram)
                 SendTradeAlert(_Symbol, paSignal.direction, paSignal.lotSize, paSignal.entryPrice, paSignal.stopLoss, paSignal.takeProfit, "PRICE ACTION ENHANCED");
-            
-            PrintFormat("🎯 PRICE ACTION ENHANCED: %s | Strong Pattern | Multi-TF Confirmed", 
-                       (paSignal.direction == DIR_BUY ? "BULLISH" : "BEARISH"));
+
+            PrintFormat("🎯 PRICE ACTION ENHANCED: %s | Strong Pattern | Multi-TF Confirmed",
+                        (paSignal.direction == DIR_BUY ? "BULLISH" : "BEARISH"));
             lastTradeTime = TimeCurrent();
             lastPACheck = TimeCurrent();
             return true;
@@ -852,25 +910,25 @@ bool ExecutePowerTier2()
 
     // 4. MOMENTUM SCALPING ENHANCED
     static datetime lastMomentumCheck = 0;
-    if(UseMomentumPullback && (TimeCurrent() - lastMomentumCheck >= 3))
+    if (UseMomentumPullback && (TimeCurrent() - lastMomentumCheck >= 3))
     {
         MomentumSignal momentumSignal;
-        if(DetectMomentumPullback(MomentumTF, momentumSignal, MomentumLookback) && momentumSignal.found)
+        if (DetectMomentumPullback(MomentumTF, momentumSignal, MomentumLookback) && momentumSignal.found)
         {
-            if(IsScalpingCondition() && IsSignalInTrend(momentumSignal.dir))
+            if (IsScalpingCondition() && IsSignalInTrend(momentumSignal.dir))
             {
-                double scalpLot = RiskManager::GetDynamicLot(0.5, 
-                    (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10));
-                
+                double scalpLot = RiskManager::GetDynamicLot(0.5,
+                                                             (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10));
+
                 // PERBAIKAN: Direct execution
-                if(momentumSignal.dir == DIR_BUY)
+                if (momentumSignal.dir == DIR_BUY)
                 {
                     int slPips = (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10);
                     int tpPips = (int)((momentumSignal.takeProfit - momentumSignal.entryPrice) / _Point / 10);
-                    ExecuteBuy(scalpLot, slPips, tpPips);  // LANGSUNG EXECUTE
+                    ExecuteBuy(scalpLot, slPips, tpPips); // LANGSUNG EXECUTE
                     executed = true;
-                    
-                    if(Dashboard_SendTelegram)
+
+                    if (Dashboard_SendTelegram)
                         SendTradeAlert(_Symbol, DIR_BUY, scalpLot, momentumSignal.entryPrice, momentumSignal.stopLoss, momentumSignal.takeProfit, "MOMENTUM SCALP");
                     PrintFormat("⚡ MOMENTUM SCALP: BUY | Quick Profit");
                 }
@@ -878,14 +936,15 @@ bool ExecutePowerTier2()
                 {
                     int slPips = (int)((momentumSignal.stopLoss - momentumSignal.entryPrice) / _Point / 10);
                     int tpPips = (int)((momentumSignal.entryPrice - momentumSignal.takeProfit) / _Point / 10);
-                    ExecuteSell(scalpLot, slPips, tpPips);  // LANGSUNG EXECUTE
+                    ExecuteSell(scalpLot, slPips, tpPips); // LANGSUNG EXECUTE
                     executed = true;
-                    
-                    if(Dashboard_SendTelegram)
+
+                    if (Dashboard_SendTelegram)
                         SendTradeAlert(_Symbol, DIR_SELL, scalpLot, momentumSignal.entryPrice, momentumSignal.stopLoss, momentumSignal.takeProfit, "MOMENTUM SCALP");
                     PrintFormat("⚡ MOMENTUM SCALP: SELL | Quick Profit");
                 }
-                if(executed) lastTradeTime = TimeCurrent();
+                if (executed)
+                    lastTradeTime = TimeCurrent();
             }
         }
         lastMomentumCheck = TimeCurrent();
@@ -897,28 +956,28 @@ bool ExecuteEnhancedTier3()
 {
     // 8. STOCHASTIC POWER UPGRADE
     static datetime lastStochCheck = 0;
-    if(UseStochastic && (TimeCurrent() - lastStochCheck >= 10))
+    if (UseStochastic && (TimeCurrent() - lastStochCheck >= 10))
     {
         StochSignal stochSignal = GetStochasticSignalUltimateAdvanced(Stoch_TFLow, Stoch_TFHigh, Stoch_KPeriod, Stoch_DPeriod, Stoch_Slowing, Stoch_EMAPeriod, Stoch_ATR_Multiplier, 0);
-        
-        if(stochSignal.signal != DIR_NONE && stochSignal.isStrong && 
-           IsStochasticPower(stochSignal) && IsSignalInTrend(stochSignal.signal) && HasVolumeConfirmation())
+
+        if (stochSignal.signal != DIR_NONE && stochSignal.isStrong &&
+            IsStochasticPower(stochSignal) && IsSignalInTrend(stochSignal.signal) && HasVolumeConfirmation())
         {
-            double stochLot = RiskManager::GetDynamicLot(0.6, 
-                (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10));
-            
+            double stochLot = RiskManager::GetDynamicLot(0.6,
+                                                         (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10));
+
             // PERBAIKAN: Direct execution
-            if(stochSignal.signal == DIR_BUY)
+            if (stochSignal.signal == DIR_BUY)
             {
                 int slPips = (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10);
                 int tpPips = (int)((stochSignal.takeProfit - stochSignal.entryPrice) / _Point / 10);
-                ExecuteBuy(stochLot, slPips, tpPips);  // LANGSUNG EXECUTE
-                
-                if(Dashboard_SendTelegram)
+                ExecuteBuy(stochLot, slPips, tpPips); // LANGSUNG EXECUTE
+
+                if (Dashboard_SendTelegram)
                     SendTradeAlert(_Symbol, DIR_BUY, stochLot, stochSignal.entryPrice, stochSignal.stopLoss, stochSignal.takeProfit, "STOCHASTIC POWER");
-                
-                PrintFormat("📊 STOCHASTIC POWER: BUY | K:%.1f D:%.1f | Enhanced Signal", 
-                           stochSignal.kValueLow, stochSignal.dValueLow);
+
+                PrintFormat("📊 STOCHASTIC POWER: BUY | K:%.1f D:%.1f | Enhanced Signal",
+                            stochSignal.kValueLow, stochSignal.dValueLow);
                 lastTradeTime = TimeCurrent();
                 lastStochCheck = TimeCurrent();
                 return true;
@@ -927,13 +986,13 @@ bool ExecuteEnhancedTier3()
             {
                 int slPips = (int)((stochSignal.stopLoss - stochSignal.entryPrice) / _Point / 10);
                 int tpPips = (int)((stochSignal.entryPrice - stochSignal.takeProfit) / _Point / 10);
-                ExecuteSell(stochLot, slPips, tpPips);  // LANGSUNG EXECUTE
-                
-                if(Dashboard_SendTelegram)
+                ExecuteSell(stochLot, slPips, tpPips); // LANGSUNG EXECUTE
+
+                if (Dashboard_SendTelegram)
                     SendTradeAlert(_Symbol, DIR_SELL, stochLot, stochSignal.entryPrice, stochSignal.stopLoss, stochSignal.takeProfit, "STOCHASTIC POWER");
-                
-                PrintFormat("📊 STOCHASTIC POWER: SELL | K:%.1f D:%.1f | Enhanced Signal", 
-                           stochSignal.kValueLow, stochSignal.dValueLow);
+
+                PrintFormat("📊 STOCHASTIC POWER: SELL | K:%.1f D:%.1f | Enhanced Signal",
+                            stochSignal.kValueLow, stochSignal.dValueLow);
                 lastTradeTime = TimeCurrent();
                 lastStochCheck = TimeCurrent();
                 return true;
@@ -949,24 +1008,24 @@ bool ExecuteEnhancedTier3()
 bool ExecuteAdvancedTier4()
 {
     bool executed = false;
-    
+
     // 9. CHART PATTERNS ULTIMATE
     static datetime lastChartCheck = 0;
-    if(TimeCurrent() - lastChartCheck >= 300) // Setiap 5 menit
+    if (TimeCurrent() - lastChartCheck >= 300) // Setiap 5 menit
     {
         ChartPatternSignal chartSignal = GetChartPatternSignalUltimate(1, 10, PERIOD_M15);
-        
-        if(chartSignal.signal != DIR_NONE && chartSignal.isStrong && IsSignalInTrend(chartSignal.signal))
+
+        if (chartSignal.signal != DIR_NONE && chartSignal.isStrong && IsSignalInTrend(chartSignal.signal))
         {
-            double chartLot = RiskManager::GetDynamicLot(0.7, 
-                (int)((chartSignal.entryPrice - chartSignal.stopLoss) / _Point / 10));
-            
-            if(chartSignal.signal == DIR_BUY)
+            double chartLot = RiskManager::GetDynamicLot(0.7,
+                                                         (int)((chartSignal.entryPrice - chartSignal.stopLoss) / _Point / 10));
+
+            if (chartSignal.signal == DIR_BUY)
             {
                 int slPips = (int)((chartSignal.entryPrice - chartSignal.stopLoss) / _Point / 10);
                 int tpPips = (int)((chartSignal.takeProfit - chartSignal.entryPrice) / _Point / 10);
                 ExecuteBuy(chartLot, slPips, tpPips);
-                
+
                 PrintFormat("📈 CHART PATTERN: BUY | %s | Strong Pattern", chartSignal.patternName);
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -976,7 +1035,7 @@ bool ExecuteAdvancedTier4()
                 int slPips = (int)((chartSignal.stopLoss - chartSignal.entryPrice) / _Point / 10);
                 int tpPips = (int)((chartSignal.entryPrice - chartSignal.takeProfit) / _Point / 10);
                 ExecuteSell(chartLot, slPips, tpPips);
-                
+
                 PrintFormat("📈 CHART PATTERN: SELL | %s | Strong Pattern", chartSignal.patternName);
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -987,7 +1046,7 @@ bool ExecuteAdvancedTier4()
 
     // 10. HARMONIC PATTERNS PRO
     static datetime lastHarmonicCheck = 0;
-    if(TimeCurrent() - lastHarmonicCheck >= 600) // Setiap 10 menit
+    if (TimeCurrent() - lastHarmonicCheck >= 600) // Setiap 10 menit
     {
         // Ambil titik XABCD dari chart
         double X = iHigh(_Symbol, PERIOD_H1, 10);
@@ -995,20 +1054,20 @@ bool ExecuteAdvancedTier4()
         double B = iHigh(_Symbol, PERIOD_H1, 6);
         double C = iLow(_Symbol, PERIOD_H1, 4);
         double D = iClose(_Symbol, PERIOD_H1, 0);
-        
+
         HarmonicPatternSignal harmonicSignal = DetectHarmonicPattern(X, A, B, C, D);
-        
-        if(harmonicSignal.signal != DIR_NONE && harmonicSignal.isStrong && IsSignalInTrend(harmonicSignal.signal))
+
+        if (harmonicSignal.signal != DIR_NONE && harmonicSignal.isStrong && IsSignalInTrend(harmonicSignal.signal))
         {
-            double harmonicLot = RiskManager::GetDynamicLot(0.6, 
-                (int)(MathAbs(D - harmonicSignal.stopLoss) / _Point / 10));
-            
-            if(harmonicSignal.signal == DIR_BUY)
+            double harmonicLot = RiskManager::GetDynamicLot(0.6,
+                                                            (int)(MathAbs(D - harmonicSignal.stopLoss) / _Point / 10));
+
+            if (harmonicSignal.signal == DIR_BUY)
             {
-                ExecuteBuy(harmonicLot, 
-                    (int)((D - harmonicSignal.stopLoss) / _Point / 10),
-                    (int)((harmonicSignal.takeProfit - D) / _Point / 10));
-                
+                ExecuteBuy(harmonicLot,
+                           (int)((D - harmonicSignal.stopLoss) / _Point / 10),
+                           (int)((harmonicSignal.takeProfit - D) / _Point / 10));
+
                 PrintFormat("🎯 HARMONIC PATTERN: BUY | %s | High Probability", harmonicSignal.patternName);
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1016,9 +1075,9 @@ bool ExecuteAdvancedTier4()
             else
             {
                 ExecuteSell(harmonicLot,
-                    (int)((harmonicSignal.stopLoss - D) / _Point / 10),
-                    (int)((D - harmonicSignal.takeProfit) / _Point / 10));
-                
+                            (int)((harmonicSignal.stopLoss - D) / _Point / 10),
+                            (int)((D - harmonicSignal.takeProfit) / _Point / 10));
+
                 PrintFormat("🎯 HARMONIC PATTERN: SELL | %s | High Probability", harmonicSignal.patternName);
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1029,18 +1088,18 @@ bool ExecuteAdvancedTier4()
 
     // 11. SMART MONEY CONCEPT (SMC)
     static datetime lastSMCCheck = 0;
-    if(TimeCurrent() - lastSMCCheck >= 180) // Setiap 3 menit
+    if (TimeCurrent() - lastSMCCheck >= 180) // Setiap 3 menit
     {
         SMCSignal smcSignal = DetectSMCSignalAdvanced(SMC_BaseLot, SMC_EMA_Period1, SMC_EMA_Period2, SMC_Lookback, SMC_ATR_Multiplier);
-        
-        if(smcSignal.signal != DIR_NONE && smcSignal.isStrong)
+
+        if (smcSignal.signal != DIR_NONE && smcSignal.isStrong)
         {
-            if(smcSignal.signal == DIR_BUY)
+            if (smcSignal.signal == DIR_BUY)
             {
                 ExecuteBuy(smcSignal.lotSize,
-                    (int)((smcSignal.entryPrice - smcSignal.stopLoss) / _Point / 10),
-                    (int)((smcSignal.takeProfit - smcSignal.entryPrice) / _Point / 10));
-                
+                           (int)((smcSignal.entryPrice - smcSignal.stopLoss) / _Point / 10),
+                           (int)((smcSignal.takeProfit - smcSignal.entryPrice) / _Point / 10));
+
                 PrintFormat("💎 SMC SIGNAL: BUY | Smart Money Detection");
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1048,9 +1107,9 @@ bool ExecuteAdvancedTier4()
             else
             {
                 ExecuteSell(smcSignal.lotSize,
-                    (int)((smcSignal.stopLoss - smcSignal.entryPrice) / _Point / 10),
-                    (int)((smcSignal.entryPrice - smcSignal.takeProfit) / _Point / 10));
-                
+                            (int)((smcSignal.stopLoss - smcSignal.entryPrice) / _Point / 10),
+                            (int)((smcSignal.entryPrice - smcSignal.takeProfit) / _Point / 10));
+
                 PrintFormat("💎 SMC SIGNAL: SELL | Smart Money Detection");
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1069,25 +1128,25 @@ bool ExecuteMomentumTier5()
 
     // 12. ICEBERG VOLUME DETECTION
     static datetime lastIcebergCheck = 0;
-    if(TimeCurrent() - lastIcebergCheck >= 60) // Setiap 1 menit
+    if (TimeCurrent() - lastIcebergCheck >= 60) // Setiap 1 menit
     {
         IcebergLevel iceberg = DetectIcebergAdvanced(0); // Current candle
-        
-        if(iceberg == ICE_STRONG)
+
+        if (iceberg == ICE_STRONG)
         {
             // Ambil sinyal dari momentum untuk konfirmasi arah
             MomentumSignal momentumSignal;
-            if(DetectMomentumPullback(PERIOD_M5, momentumSignal, 10) && momentumSignal.found)
+            if (DetectMomentumPullback(PERIOD_M5, momentumSignal, 10) && momentumSignal.found)
             {
-                double volumeLot = RiskManager::GetDynamicLot(0.4, 
-                    (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10));
-                
-                if(momentumSignal.dir == DIR_BUY)
+                double volumeLot = RiskManager::GetDynamicLot(0.4,
+                                                              (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10));
+
+                if (momentumSignal.dir == DIR_BUY)
                 {
                     ExecuteBuy(volumeLot,
-                        (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10),
-                        (int)((momentumSignal.takeProfit - momentumSignal.entryPrice) / _Point / 10));
-                    
+                               (int)((momentumSignal.entryPrice - momentumSignal.stopLoss) / _Point / 10),
+                               (int)((momentumSignal.takeProfit - momentumSignal.entryPrice) / _Point / 10));
+
                     PrintFormat("🧊 ICEBERG VOLUME: BUY | Strong Institutional Volume");
                     lastTradeTime = TimeCurrent();
                     executed = true;
@@ -1095,9 +1154,9 @@ bool ExecuteMomentumTier5()
                 else
                 {
                     ExecuteSell(volumeLot,
-                        (int)((momentumSignal.stopLoss - momentumSignal.entryPrice) / _Point / 10),
-                        (int)((momentumSignal.entryPrice - momentumSignal.takeProfit) / _Point / 10));
-                    
+                                (int)((momentumSignal.stopLoss - momentumSignal.entryPrice) / _Point / 10),
+                                (int)((momentumSignal.entryPrice - momentumSignal.takeProfit) / _Point / 10));
+
                     PrintFormat("🧊 ICEBERG VOLUME: SELL | Strong Institutional Volume");
                     lastTradeTime = TimeCurrent();
                     executed = true;
@@ -1109,21 +1168,21 @@ bool ExecuteMomentumTier5()
 
     // 13. SMART CONVERGENCE MOMENTUM (SCM)
     static datetime lastSCMCheck = 0;
-    if(TimeCurrent() - lastSCMCheck >= 120) // Setiap 2 menit
+    if (TimeCurrent() - lastSCMCheck >= 120) // Setiap 2 menit
     {
-        SCMSignal scmSignal = DetectSCMSignalHighProb(SCM_BaseLot, SCM_EMAPeriod, SCM_RSIPeriod, 
-                                                     SCM_RSI_OB, SCM_RSI_OS, SCM_MACD_Fast, 
-                                                     SCM_MACD_Slow, SCM_MACD_Signal, SCM_ATRPeriod, 
-                                                     SCM_ATRMultiplier);
-        
-        if(scmSignal.signal != DIR_NONE && scmSignal.isStrong)
+        SCMSignal scmSignal = DetectSCMSignalHighProb(SCM_BaseLot, SCM_EMAPeriod, SCM_RSIPeriod,
+                                                      SCM_RSI_OB, SCM_RSI_OS, SCM_MACD_Fast,
+                                                      SCM_MACD_Slow, SCM_MACD_Signal, SCM_ATRPeriod,
+                                                      SCM_ATRMultiplier);
+
+        if (scmSignal.signal != DIR_NONE && scmSignal.isStrong)
         {
-            if(scmSignal.signal == DIR_BUY)
+            if (scmSignal.signal == DIR_BUY)
             {
                 ExecuteBuy(scmSignal.lotSize,
-                    (int)((scmSignal.entryPrice - scmSignal.stopLoss) / _Point / 10),
-                    (int)((scmSignal.takeProfit - scmSignal.entryPrice) / _Point / 10));
-                
+                           (int)((scmSignal.entryPrice - scmSignal.stopLoss) / _Point / 10),
+                           (int)((scmSignal.takeProfit - scmSignal.entryPrice) / _Point / 10));
+
                 PrintFormat("⚡ SCM SIGNAL: BUY | Multi-Indicator Convergence");
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1131,9 +1190,9 @@ bool ExecuteMomentumTier5()
             else
             {
                 ExecuteSell(scmSignal.lotSize,
-                    (int)((scmSignal.stopLoss - scmSignal.entryPrice) / _Point / 10),
-                    (int)((scmSignal.entryPrice - scmSignal.takeProfit) / _Point / 10));
-                
+                            (int)((scmSignal.stopLoss - scmSignal.entryPrice) / _Point / 10),
+                            (int)((scmSignal.entryPrice - scmSignal.takeProfit) / _Point / 10));
+
                 PrintFormat("⚡ SCM SIGNAL: SELL | Multi-Indicator Convergence");
                 lastTradeTime = TimeCurrent();
                 executed = true;
@@ -1145,13 +1204,12 @@ bool ExecuteMomentumTier5()
     return executed;
 }
 
-
 void ExecuteBackupSystem()
 {
     static datetime lastSignalCheck = 0;
-    if(TimeCurrent() - lastSignalCheck >= 12)
+    if (TimeCurrent() - lastSignalCheck >= 12)
     {
-        if(!HasActiveTrades() && !IsNewsPeriod() && RiskManager::CanOpenTrade())
+        if (!HasActiveTrades() && !IsNewsPeriod() && RiskManager::CanOpenTrade())
         {
             ExecuteTradeFromSignals();
         }
@@ -1162,14 +1220,14 @@ void ExecuteBackupSystem()
 void ManageAdvancedRisk()
 {
     static datetime lastRiskCheck = 0;
-    if(TimeCurrent() - lastRiskCheck >= 2)
+    if (TimeCurrent() - lastRiskCheck >= 2)
     {
         ManageTrailingBreakCloseUltimate();
-        
-        if(!RiskManager::CanOpenTrade())
+
+        if (!RiskManager::CanOpenTrade())
         {
             Print("⚠️ RISK MANAGEMENT: Trading suspended");
-            if(Dashboard_SendTelegram)
+            if (Dashboard_SendTelegram)
             {
                 string riskMsg = "🚨 *RISK MANAGEMENT ALERT* 🚨\n";
                 riskMsg += "Trading suspended due to risk limits!";
@@ -1194,8 +1252,8 @@ bool IsSignalInTrend(Dir direction)
     double emaFast = iMA(_Symbol, PERIOD_H1, 50, 0, MODE_EMA, PRICE_CLOSE);
     double emaSlow = iMA(_Symbol, PERIOD_H1, 200, 0, MODE_EMA, PRICE_CLOSE);
     double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-    
-    if(direction == DIR_BUY)
+
+    if (direction == DIR_BUY)
         return (emaFast > emaSlow && price > emaFast);
     else
         return (emaFast < emaSlow && price < emaFast);
@@ -1213,7 +1271,7 @@ bool IsScalpingCondition()
 bool IsStochasticPower(const StochSignal &signal)
 {
     // Strong stochastic signals only
-    return (signal.kValueLow < 15 && signal.dValueLow < 20) || 
+    return (signal.kValueLow < 15 && signal.dValueLow < 20) ||
            (signal.kValueLow > 85 && signal.dValueLow > 80);
 }
 
@@ -1240,40 +1298,50 @@ void PrintSystemPerformance()
     int totalPositions = PositionsTotal();
     double totalProfit = 0;
     int buyCount = 0, sellCount = 0;
-    
-    for(int i = 0; i < totalPositions; i++)
+
+    for (int i = 0; i < totalPositions; i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
         {
             double profit = PositionGetDouble(POSITION_PROFIT);
             string comment = PositionGetString(POSITION_COMMENT);
             long type = PositionGetInteger(POSITION_TYPE);
-            
+
             totalProfit += profit;
-            
-            if(type == POSITION_TYPE_BUY) buyCount++;
-            else if(type == POSITION_TYPE_SELL) sellCount++;
-            
+
+            if (type == POSITION_TYPE_BUY)
+                buyCount++;
+            else if (type == POSITION_TYPE_SELL)
+                sellCount++;
+
             // Kategorikan berdasarkan tier
-            if(StringFind(comment, "ORDER BLOCK") >= 0) totalTiers[0]++;
-            else if(StringFind(comment, "PRICE ACTION") >= 0) totalTiers[0]++;
-            else if(StringFind(comment, "SMC") >= 0) totalTiers[0]++;
-            else if(StringFind(comment, "MOMENTUM") >= 0) totalTiers[1]++;
-            else if(StringFind(comment, "CANDLE") >= 0) totalTiers[1]++;
-            else if(StringFind(comment, "NEWS") >= 0) totalTiers[3]++;
-            else if(StringFind(comment, "STOCHASTIC") >= 0) totalTiers[3]++;
-            else totalTiers[2]++; // Consensus engine
+            if (StringFind(comment, "ORDER BLOCK") >= 0)
+                totalTiers[0]++;
+            else if (StringFind(comment, "PRICE ACTION") >= 0)
+                totalTiers[0]++;
+            else if (StringFind(comment, "SMC") >= 0)
+                totalTiers[0]++;
+            else if (StringFind(comment, "MOMENTUM") >= 0)
+                totalTiers[1]++;
+            else if (StringFind(comment, "CANDLE") >= 0)
+                totalTiers[1]++;
+            else if (StringFind(comment, "NEWS") >= 0)
+                totalTiers[3]++;
+            else if (StringFind(comment, "STOCHASTIC") >= 0)
+                totalTiers[3]++;
+            else
+                totalTiers[2]++; // Consensus engine
         }
     }
-    
+
     string performance = StringFormat("📊 PERFORMANCE: T1:%d T2:%d T3:%d T4:%d | BUY:%d SELL:%d | P/L: $%.2f | Optimal Structure Active",
-                totalTiers[0], totalTiers[1], totalTiers[2], totalTiers[3], buyCount, sellCount, totalProfit);
-    
+                                      totalTiers[0], totalTiers[1], totalTiers[2], totalTiers[3], buyCount, sellCount, totalProfit);
+
     Print(performance);
-    
+
     // Kirim performance alert jika profit/loss signifikan
-    if(Dashboard_SendTelegram && MathAbs(totalProfit) > 50) // Jika P/L > $50
+    if (Dashboard_SendTelegram && MathAbs(totalProfit) > 50) // Jika P/L > $50
     {
         string perfMsg = "📈 *PERFORMANCE UPDATE* 📈\n";
         perfMsg += "Total P/L: $" + DoubleToString(totalProfit, 2) + "\n";
@@ -1293,24 +1361,26 @@ void PrintActivePositionsSummary()
     int buyPositions = 0;
     int sellPositions = 0;
     double totalVolume = 0;
-    
-    for(int i = 0; i < totalPositions; i++)
+
+    for (int i = 0; i < totalPositions; i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
         {
             double volume = PositionGetDouble(POSITION_VOLUME);
             long type = PositionGetInteger(POSITION_TYPE);
             totalVolume += volume;
-            
-            if(type == POSITION_TYPE_BUY) buyPositions++;
-            else if(type == POSITION_TYPE_SELL) sellPositions++;
+
+            if (type == POSITION_TYPE_BUY)
+                buyPositions++;
+            else if (type == POSITION_TYPE_SELL)
+                sellPositions++;
         }
     }
-    
+
     string summary = StringFormat("📈 POSITIONS: Total: %d (BUY: %d, SELL: %d) | Volume: %.2f",
-                totalPositions, buyPositions, sellPositions, totalVolume);
-    
+                                  totalPositions, buyPositions, sellPositions, totalVolume);
+
     Print(summary);
 }
 
@@ -1323,19 +1393,19 @@ bool IsNewsPeriod()
     datetime newsTime = 0;
     string newsName = "";
     int eventImpact = 0;
-    
-    for(int i = 0; i < CalendarEventsTotal(); i++)
+
+    for (int i = 0; i < CalendarEventsTotal(); i++)
     {
-        if(CalendarEventByIndex(i, newsTime, newsName, eventImpact))
+        if (CalendarEventByIndex(i, newsTime, newsName, eventImpact))
         {
             // Skip 10 minutes before and 20 minutes after high impact news
-            if(eventImpact >= 2 && currentTime >= newsTime - 600 && currentTime <= newsTime + 1200)
+            if (eventImpact >= 2 && currentTime >= newsTime - 600 && currentTime <= newsTime + 1200)
             {
-                if(Dashboard_SendTelegram)
+                if (Dashboard_SendTelegram)
                 {
                     string newsMsg = "📢 *NEWS PERIOD DETECTED* 📢\n";
                     newsMsg += "Event: " + newsName + "\n";
-                    newsMsg += "Time: " + TimeToString(newsTime, TIME_DATE|TIME_MINUTES) + "\n";
+                    newsMsg += "Time: " + TimeToString(newsTime, TIME_DATE | TIME_MINUTES) + "\n";
                     newsMsg += "Impact Level: " + IntegerToString(eventImpact) + "\n";
                     newsMsg += "Trading may be limited during this period";
                     SendTelegramMessage(newsMsg);
@@ -1353,57 +1423,63 @@ bool IsNewsPeriod()
 void OnTimer()
 {
     // Timer untuk dashboard animations
-    if(EnableDashboard && Dashboard_AnimateBars)
+    if (EnableDashboard && Dashboard_AnimateBars)
     {
         // Update chart labels untuk animasi
         int totalObjects = ObjectsTotal(0, -1, OBJ_LABEL);
-        if(totalObjects > 0)
+        if (totalObjects > 0)
         {
             // Hanya update jika ada label aktif
             datetime nowTime = TimeCurrent();
             int tickAnim = int(nowTime % Dashboard_BarLength);
-            
+
             // Update posisi label untuk efek animasi sederhana
-            for(int i = 0; i < totalObjects; i++)
+            for (int i = 0; i < totalObjects; i++)
             {
                 string objName = ObjectName(0, i, -1, OBJ_LABEL);
-                if(StringFind(objName, "SignalLabel_") >= 0)
+                if (StringFind(objName, "SignalLabel_") >= 0)
                 {
                     // Alternatif warna untuk efek animasi
                     color currentColor = (color)ObjectGetInteger(0, objName, OBJPROP_COLOR);
                     color newColor = currentColor;
-                    
-                    if(tickAnim % 2 == 0)
+
+                    if (tickAnim % 2 == 0)
                     {
                         // Efek blink sederhana
-                        if(currentColor == clrLime) newColor = clrGreen;
-                        else if(currentColor == clrOrange) newColor = clrDarkOrange;
-                        else if(currentColor == clrYellow) newColor = clrGold;
+                        if (currentColor == clrLime)
+                            newColor = clrGreen;
+                        else if (currentColor == clrOrange)
+                            newColor = clrDarkOrange;
+                        else if (currentColor == clrYellow)
+                            newColor = clrGold;
                     }
                     else
                     {
                         // Kembali ke warna original
-                        if(currentColor == clrGreen) newColor = clrLime;
-                        else if(currentColor == clrDarkOrange) newColor = clrOrange;
-                        else if(currentColor == clrGold) newColor = clrYellow;
+                        if (currentColor == clrGreen)
+                            newColor = clrLime;
+                        else if (currentColor == clrDarkOrange)
+                            newColor = clrOrange;
+                        else if (currentColor == clrGold)
+                            newColor = clrYellow;
                     }
-                    
+
                     ObjectSetInteger(0, objName, OBJPROP_COLOR, newColor);
                 }
             }
         }
     }
-    
+
     // Periodic health check setiap 60 detik
     static datetime lastHealthCheck = 0;
-    if(TimeCurrent() - lastHealthCheck >= 60)
+    if (TimeCurrent() - lastHealthCheck >= 60)
     {
         // Check account connection
-        if(!TerminalInfoInteger(TERMINAL_CONNECTED))
+        if (!TerminalInfoInteger(TERMINAL_CONNECTED))
         {
             Print("⚠️ Terminal not connected to broker");
         }
-        
+
         lastHealthCheck = TimeCurrent();
     }
 }
@@ -1414,29 +1490,29 @@ void OnTimer()
 bool HasActiveHighPriorityTrades()
 {
     int highPriorityCount = 0;
-    
-    for(int i = 0; i < PositionsTotal(); i++)
+
+    for (int i = 0; i < PositionsTotal(); i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
         {
             string comment = PositionGetString(POSITION_COMMENT);
             datetime openTime = (datetime)PositionGetInteger(POSITION_TIME);
-            
+
             // Consider trades opened in last 5 minutes as high priority
-            if(TimeCurrent() - openTime < 300)
+            if (TimeCurrent() - openTime < 300)
             {
                 highPriorityCount++;
-                
+
                 // If we find SMC or News trades, consider as high priority
-                if(StringFind(comment, "SMC") >= 0 || StringFind(comment, "News") >= 0)
+                if (StringFind(comment, "SMC") >= 0 || StringFind(comment, "News") >= 0)
                 {
                     return true; // Immediate return if found SMC or News trades
                 }
             }
         }
     }
-    
+
     // If we have more than 3 recent high priority trades, skip regular signals
     return (highPriorityCount >= 3);
 }
@@ -1448,16 +1524,23 @@ void PrintSystemStatus()
 {
     string status = "🟢 NORMAL";
     int activeSignals = 0;
-    
+
     // Check if any detection systems are active
-    if(UseSMCSignal) activeSignals++;
-    if(UseOrderBlock) activeSignals++;
-    if(UsePriceAction) activeSignals++;
-    if(UseSCMSignal) activeSignals++;
-    if(UseCandlePattern) activeSignals++;
-    if(UseMomentumPullback) activeSignals++;
-    if(UseNewsImpact) activeSignals++;
-    
+    if (UseSMCSignal)
+        activeSignals++;
+    if (UseOrderBlock)
+        activeSignals++;
+    if (UsePriceAction)
+        activeSignals++;
+    if (UseSCMSignal)
+        activeSignals++;
+    if (UseCandlePattern)
+        activeSignals++;
+    if (UseMomentumPullback)
+        activeSignals++;
+    if (UseNewsImpact)
+        activeSignals++;
+
     PrintFormat("🖥️ SYSTEM STATUS: %s | Active Detectors: %d/7 | Risk Management: %s",
                 status, activeSignals,
                 (RiskManager::CanOpenTrade() ? "ENABLED" : "DISABLED"));
@@ -1473,25 +1556,298 @@ void PrintAccountStatus()
     double margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
     double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
     int positions = PositionsTotal();
-    
+
     PrintFormat("📊 ACCOUNT STATUS | Balance: $%.2f | Equity: $%.2f | Free Margin: $%.2f | Margin Level: %.1f%% | Positions: %d",
                 balance, equity, margin, (marginLevel > 0 ? marginLevel : 0), positions);
 }
 
+//==================================================================
+// Helper Function: Calendar Event - TradingView Implementation
+//==================================================================
+//==================================================================
+// Helper Function: Calendar Event - TradingView Implementation
+//==================================================================
 
-//==================================================================
-// Helper Function: Calendar Event Placeholders
-//==================================================================
+// Hapus include JAson dan gunakan parser native
+// #include <JAson.mqh> // HAPUS BARIS INI
+
 int CalendarEventsTotal()
 {
-    // Placeholder - dalam implementasi real, ini akan mengakses economic calendar
-    return 0;
+    datetime fromTime = TimeCurrent();
+    datetime toTime = fromTime + 86400; // 24 jam ke depan
+    
+    string events = GetTradingViewCalendarEvents(fromTime, toTime);
+    if(events == "") return 0;
+    
+    return ParseTradingViewEventsCount(events);
 }
 
 bool CalendarEventByIndex(int index, datetime &eventTime, string &eventName, int &impact)
 {
-    // Placeholder - dalam implementasi real, ini akan mengambil data economic calendar
+    datetime fromTime = TimeCurrent();
+    datetime toTime = fromTime + 86400;
+    
+    string events = GetTradingViewCalendarEvents(fromTime, toTime);
+    if(events == "") return false;
+    
+    return GetTradingViewEventByIndex(events, index, eventTime, eventName, impact);
+}
+
+// Fungsi utama untuk mengambil data dari TradingView
+string GetTradingViewCalendarEvents(datetime fromTime, datetime toTime)
+{
+    string result = "";
+    
+    // Format URL TradingView Economic Calendar
+    string url = "https://economic-calendar.tradingview.com/events?from=" + 
+                 TimeToString(fromTime, TIME_DATE) + 
+                 "&to=" + 
+                 TimeToString(toTime, TIME_DATE);
+    
+    string headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n";
+    headers += "Accept: application/json, text/plain, */*\r\n";
+    
+    char data[];
+    char postData[];
+    int timeout = 5000;
+    string resultHeaders;
+    
+    ResetLastError();
+    int response = WebRequest("GET", url, headers, timeout, postData, data, resultHeaders);
+    
+    if(response == 200)
+    {
+        result = CharArrayToString(data);
+        Print("✓ Successfully fetched economic calendar data");
+    }
+    else
+    {
+        Print("❌ Failed to fetch calendar data. Error: ", GetLastError(), ", Response: ", response);
+        // Fallback ke simulated data
+        result = GetSimulatedCalendarData(fromTime, toTime);
+    }
+    
+    return result;
+}
+
+// Parse JSON menggunakan MQL5 native functions
+int ParseTradingViewEventsCount(string jsonData)
+{
+    int count = 0;
+    
+    // Simple string parsing untuk menghitung events
+    int startPos = StringFind(jsonData, "\"events\"");
+    if(startPos == -1) return 0;
+    
+    int arrayStart = StringFind(jsonData, "[", startPos);
+    int arrayEnd = StringFind(jsonData, "]", arrayStart);
+    
+    if(arrayStart == -1 || arrayEnd == -1) return 0;
+    
+    string eventsArray = StringSubstr(jsonData, arrayStart, arrayEnd - arrayStart + 1);
+    
+    // Hitung jumlah objects dalam array
+    int objCount = 0;
+    int searchPos = 0;
+    while((searchPos = StringFind(eventsArray, "{", searchPos)) != -1)
+    {
+        objCount++;
+        searchPos++;
+    }
+    
+    // Filter untuk currency yang relevan
+    string currentSymbol = _Symbol;
+    string baseCurrency = StringSubstr(currentSymbol, 0, 3);
+    string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
+    
+    int relevantCount = 0;
+    for(int i = 0; i < objCount; i++)
+    {
+        // Cari country field dalam setiap event
+        string eventStr = ExtractEventString(eventsArray, i);
+        if(IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
+        {
+            relevantCount++;
+        }
+    }
+    
+    return relevantCount;
+}
+
+// Extract event string sederhana
+string ExtractEventString(string eventsArray, int index)
+{
+    int currentIndex = 0;
+    int startPos = 0;
+    
+    while(currentIndex <= index)
+    {
+        startPos = StringFind(eventsArray, "{", startPos);
+        if(startPos == -1) return "";
+        currentIndex++;
+        if(currentIndex > index) break;
+        startPos++;
+    }
+    
+    int endPos = StringFind(eventsArray, "}", startPos);
+    if(endPos == -1) return "";
+    
+    return StringSubstr(eventsArray, startPos, endPos - startPos + 1);
+}
+
+bool IsEventRelevant(string eventStr, string baseCurrency, string quoteCurrency)
+{
+    // Cek country field
+    int countryPos = StringFind(eventStr, "\"country\"");
+    if(countryPos == -1) return false;
+    
+    int colonPos = StringFind(eventStr, ":", countryPos);
+    int quoteStart = StringFind(eventStr, "\"", colonPos);
+    int quoteEnd = StringFind(eventStr, "\"", quoteStart + 1);
+    
+    if(quoteStart == -1 || quoteEnd == -1) return false;
+    
+    string country = StringSubstr(eventStr, quoteStart + 1, quoteEnd - quoteStart - 1);
+    
+    return IsCurrencyRelevant(country, baseCurrency, quoteCurrency);
+}
+
+bool GetTradingViewEventByIndex(string jsonData, int index, datetime &eventTime, string &eventName, int &impact)
+{
+    // Cari events array
+    int startPos = StringFind(jsonData, "\"events\"");
+    if(startPos == -1) return false;
+    
+    int arrayStart = StringFind(jsonData, "[", startPos);
+    int arrayEnd = StringFind(jsonData, "]", arrayStart);
+    
+    if(arrayStart == -1 || arrayEnd == -1) return false;
+    
+    string eventsArray = StringSubstr(jsonData, arrayStart, arrayEnd - arrayStart + 1);
+    
+    // Cari event berdasarkan index
+    string currentSymbol = _Symbol;
+    string baseCurrency = StringSubstr(currentSymbol, 0, 3);
+    string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
+    
+    int currentIndex = 0;
+    int searchPos = 0;
+    
+    for(int i = 0; i < 100; i++) // Max 100 events
+    {
+        string eventStr = ExtractEventString(eventsArray, i);
+        if(eventStr == "") break;
+        
+        if(IsEventRelevant(eventStr, baseCurrency, quoteCurrency))
+        {
+            if(currentIndex == index)
+            {
+                // Extract event details
+                eventName = ExtractEventField(eventStr, "title") + " (" + ExtractEventField(eventStr, "country") + ")";
+                string timeStr = ExtractEventField(eventStr, "time");
+                eventTime = StringToTime(timeStr);
+                
+                string importance = ExtractEventField(eventStr, "importance");
+                impact = ImportanceToImpact(importance);
+                
+                return true;
+            }
+            currentIndex++;
+        }
+    }
+    
     return false;
+}
+
+string ExtractEventField(string eventStr, string fieldName)
+{
+    int fieldPos = StringFind(eventStr, "\"" + fieldName + "\"");
+    if(fieldPos == -1) return "";
+    
+    int colonPos = StringFind(eventStr, ":", fieldPos);
+    int quoteStart = StringFind(eventStr, "\"", colonPos);
+    int quoteEnd = StringFind(eventStr, "\"", quoteStart + 1);
+    
+    if(quoteStart == -1 || quoteEnd == -1) return "";
+    
+    return StringSubstr(eventStr, quoteStart + 1, quoteEnd - quoteStart - 1);
+}
+
+// Fungsi helper yang sama seperti sebelumnya
+bool IsCurrencyRelevant(string country, string baseCurrency, string quoteCurrency)
+{
+    string currencyMap[][2] = {
+        {"US", "USD"}, {"EU", "EUR"}, {"UK", "GBP"}, {"JP", "JPY"},
+        {"AU", "AUD"}, {"CA", "CAD"}, {"CH", "CHF"}, {"NZ", "NZD"}
+    };
+    
+    for(int i = 0; i < ArraySize(currencyMap); i++)
+    {
+        if(currencyMap[i][0] == country)
+        {
+            string currency = currencyMap[i][1];
+            return (currency == baseCurrency || currency == quoteCurrency);
+        }
+    }
+    
+    return false;
+}
+
+int ImportanceToImpact(string importance)
+{
+    if(importance == "high") return 3;
+    if(importance == "medium") return 2;
+    if(importance == "low") return 1;
+    return 0;
+}
+
+string GetSimulatedCalendarData(datetime fromTime, datetime toTime)
+{
+    MqlDateTime fromStruct;
+    TimeToStruct(fromTime, fromStruct);
+    
+    string simulatedData = "{";
+    simulatedData += "\"result\": {";
+    simulatedData += "\"events\": [";
+    
+    string currentSymbol = _Symbol;
+    string baseCurrency = StringSubstr(currentSymbol, 0, 3);
+    string quoteCurrency = StringSubstr(currentSymbol, 3, 3);
+    
+    string countries[];
+    if(baseCurrency == "USD" || quoteCurrency == "USD")
+        ArrayPushString(countries, "US");
+    if(baseCurrency == "EUR" || quoteCurrency == "EUR")
+        ArrayPushString(countries, "EU");
+    if(baseCurrency == "GBP" || quoteCurrency == "GBP")
+        ArrayPushString(countries, "UK");
+    if(baseCurrency == "JPY" || quoteCurrency == "JPY")
+        ArrayPushString(countries, "JP");
+    
+    for(int i = 0; i < ArraySize(countries); i++)
+    {
+        if(i > 0) simulatedData += ",";
+        
+        datetime eventTime = fromTime + (i + 1) * 10800;
+        string importance = (i % 3 == 0) ? "high" : ((i % 3 == 1) ? "medium" : "low");
+        
+        simulatedData += "{";
+        simulatedData += "\"title\": \"Simulated " + countries[i] + " Event " + IntegerToString(i + 1) + "\",";
+        simulatedData += "\"country\": \"" + countries[i] + "\",";
+        simulatedData += "\"time\": \"" + TimeToString(eventTime) + "\",";
+        simulatedData += "\"importance\": \"" + importance + "\"";
+        simulatedData += "}";
+    }
+    
+    simulatedData += "]}}";
+    return simulatedData;
+}
+
+void ArrayPushString(string &array[], string value)
+{
+    int size = ArraySize(array);
+    ArrayResize(array, size + 1);
+    array[size] = value;
 }
 
 
@@ -1502,12 +1858,12 @@ void CleanupExpiredData()
 {
     // Cleanup expired indicators or temporary data
     // This helps prevent memory leaks in long-running EAs
-    
+
     // Example: Reset some static variables if needed
     static int cleanupCounter = 0;
     cleanupCounter++;
-    
-    if(cleanupCounter >= 100) // Every ~50 minutes
+
+    if (cleanupCounter >= 100) // Every ~50 minutes
     {
         // Reset any accumulation counters if needed
         cleanupCounter = 0;
@@ -1520,13 +1876,13 @@ void CleanupExpiredData()
 //==================================================================
 bool HasActiveOBTrade()
 {
-    for(int i = 0; i < PositionsTotal(); i++)
+    for (int i = 0; i < PositionsTotal(); i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
         {
             string comment = PositionGetString(POSITION_COMMENT);
-            if(StringFind(comment, "OB_") >= 0) // Trades dengan comment OB
+            if (StringFind(comment, "OB_") >= 0) // Trades dengan comment OB
                 return true;
         }
     }
@@ -1538,121 +1894,156 @@ bool HasActiveOBTrade()
 //==================================================================
 
 //--- Double Top
-bool DetectDoubleTop(int idxStart, int idxEnd, double &neckline, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectDoubleTop(int idxStart, int idxEnd, double &neckline, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
     double hi1 = iHigh(_Symbol, tf, idxStart);
     double hi2 = iHigh(_Symbol, tf, idxEnd);
-    double loBetween = iLow(_Symbol, tf, (idxStart+idxEnd)/2);
+    double loBetween = iLow(_Symbol, tf, (idxStart + idxEnd) / 2);
 
-    if(MathAbs(hi1-hi2) <= (hi1*0.0005))
+    if (MathAbs(hi1 - hi2) <= (hi1 * 0.0005))
     {
         neckline = loBetween;
-        isStrong = (MathAbs(hi1-hi2) <= (hi1*0.00025));
+        isStrong = (MathAbs(hi1 - hi2) <= (hi1 * 0.00025));
         return true;
     }
     return false;
 }
 
 //--- Double Bottom
-bool DetectDoubleBottom(int idxStart, int idxEnd, double &neckline, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectDoubleBottom(int idxStart, int idxEnd, double &neckline, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
     double lo1 = iLow(_Symbol, tf, idxStart);
     double lo2 = iLow(_Symbol, tf, idxEnd);
-    double hiBetween = iHigh(_Symbol, tf, (idxStart+idxEnd)/2);
+    double hiBetween = iHigh(_Symbol, tf, (idxStart + idxEnd) / 2);
 
-    if(MathAbs(lo1-lo2) <= (lo1*0.0005))
+    if (MathAbs(lo1 - lo2) <= (lo1 * 0.0005))
     {
         neckline = hiBetween;
-        isStrong = (MathAbs(lo1-lo2) <= (lo1*0.00025));
+        isStrong = (MathAbs(lo1 - lo2) <= (lo1 * 0.00025));
         return true;
     }
     return false;
 }
 
 //--- Triangles
-bool DetectTriangle(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectTriangle(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
     double hiStart = iHigh(_Symbol, tf, idxStart);
-    double hiEnd   = iHigh(_Symbol, tf, idxEnd);
+    double hiEnd = iHigh(_Symbol, tf, idxEnd);
     double loStart = iLow(_Symbol, tf, idxStart);
-    double loEnd   = iLow(_Symbol, tf, idxEnd);
+    double loEnd = iLow(_Symbol, tf, idxEnd);
 
-    if(hiEnd < hiStart && loEnd > loStart) { signal = DIR_BUY; isStrong=true; return true; }
-    if(hiEnd > hiStart && loEnd < loStart) { signal = DIR_SELL; isStrong=true; return true; }
-    return false;
-}
-
-//--- Head & Shoulders / Inverse H&S
-bool DetectHeadShoulders(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
-{
-    int mid = (idxStart+idxEnd)/2;
-    double hiLS = iHigh(_Symbol, tf, idxStart);
-    double hiHead = iHigh(_Symbol, tf, mid);
-    double hiRS = iHigh(_Symbol, tf, idxEnd);
-
-    if(hiHead > hiLS && hiHead > hiRS && MathAbs(hiLS-hiRS)<=hiHead*0.0005)
+    if (hiEnd < hiStart && loEnd > loStart)
+    {
+        signal = DIR_BUY;
+        isStrong = true;
+        return true;
+    }
+    if (hiEnd > hiStart && loEnd < loStart)
     {
         signal = DIR_SELL;
-        isStrong=true;
+        isStrong = true;
         return true;
     }
     return false;
 }
 
-bool DetectInverseHeadShoulders(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+//--- Head & Shoulders / Inverse H&S
+bool DetectHeadShoulders(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
-    int mid = (idxStart+idxEnd)/2;
+    int mid = (idxStart + idxEnd) / 2;
+    double hiLS = iHigh(_Symbol, tf, idxStart);
+    double hiHead = iHigh(_Symbol, tf, mid);
+    double hiRS = iHigh(_Symbol, tf, idxEnd);
+
+    if (hiHead > hiLS && hiHead > hiRS && MathAbs(hiLS - hiRS) <= hiHead * 0.0005)
+    {
+        signal = DIR_SELL;
+        isStrong = true;
+        return true;
+    }
+    return false;
+}
+
+bool DetectInverseHeadShoulders(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
+{
+    int mid = (idxStart + idxEnd) / 2;
     double loLS = iLow(_Symbol, tf, idxStart);
     double loHead = iLow(_Symbol, tf, mid);
     double loRS = iLow(_Symbol, tf, idxEnd);
 
-    if(loHead < loLS && loHead < loRS && MathAbs(loLS-loRS)<=loHead*0.0005)
+    if (loHead < loLS && loHead < loRS && MathAbs(loLS - loRS) <= loHead * 0.0005)
     {
         signal = DIR_BUY;
-        isStrong=true;
+        isStrong = true;
         return true;
     }
     return false;
 }
 
 //--- Wedges
-bool DetectWedge(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectWedge(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
-    double hiStart=iHigh(_Symbol,tf,idxStart);
-    double hiEnd=iHigh(_Symbol,tf,idxEnd);
-    double loStart=iLow(_Symbol,tf,idxStart);
-    double loEnd=iLow(_Symbol,tf,idxEnd);
+    double hiStart = iHigh(_Symbol, tf, idxStart);
+    double hiEnd = iHigh(_Symbol, tf, idxEnd);
+    double loStart = iLow(_Symbol, tf, idxStart);
+    double loEnd = iLow(_Symbol, tf, idxEnd);
 
-    if(hiEnd>hiStart && loEnd>loStart){ signal=DIR_SELL; isStrong=true; return true;}
-    if(hiEnd<hiStart && loEnd<loStart){ signal=DIR_BUY; isStrong=true; return true;}
+    if (hiEnd > hiStart && loEnd > loStart)
+    {
+        signal = DIR_SELL;
+        isStrong = true;
+        return true;
+    }
+    if (hiEnd < hiStart && loEnd < loStart)
+    {
+        signal = DIR_BUY;
+        isStrong = true;
+        return true;
+    }
     return false;
 }
 
 //--- Flags / Pennants
-bool DetectFlag(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectFlag(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
-    double opStart=iOpen(_Symbol,tf,idxStart);
-    double clEnd=iClose(_Symbol,tf,idxEnd);
+    double opStart = iOpen(_Symbol, tf, idxStart);
+    double clEnd = iClose(_Symbol, tf, idxEnd);
 
-    if(clEnd>opStart*1.005){ signal=DIR_BUY; isStrong=true; return true;}
-    if(clEnd<opStart*0.995){ signal=DIR_SELL; isStrong=true; return true;}
+    if (clEnd > opStart * 1.005)
+    {
+        signal = DIR_BUY;
+        isStrong = true;
+        return true;
+    }
+    if (clEnd < opStart * 0.995)
+    {
+        signal = DIR_SELL;
+        isStrong = true;
+        return true;
+    }
     return false;
 }
 
 //--- Cup & Handle
-bool DetectCupHandle(int idxStart,int idxEnd,Dir &signal,bool &isStrong,ENUM_TIMEFRAMES tf=PERIOD_M15)
+bool DetectCupHandle(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
-    int mid=(idxStart+idxEnd)/2;
-    double loCup=iLow(_Symbol,tf,mid);
-    double hiStart=iHigh(_Symbol,tf,idxStart);
-    double hiEnd=iHigh(_Symbol,tf,idxEnd);
+    int mid = (idxStart + idxEnd) / 2;
+    double loCup = iLow(_Symbol, tf, mid);
+    double hiStart = iHigh(_Symbol, tf, idxStart);
+    double hiEnd = iHigh(_Symbol, tf, idxEnd);
 
-    if(loCup<hiStart && loCup<hiEnd && hiEnd>hiStart){ signal=DIR_BUY; isStrong=true; return true;}
+    if (loCup < hiStart && loCup < hiEnd && hiEnd > hiStart)
+    {
+        signal = DIR_BUY;
+        isStrong = true;
+        return true;
+    }
     return false;
 }
 
 //--- Harmonic Patterns (Updated)
-bool DetectHarmonic(int idxStart,int idxEnd,Dir &signal,bool &isStrong,ENUM_TIMEFRAMES tf,string &patternName)
+bool DetectHarmonic(int idxStart, int idxEnd, Dir &signal, bool &isStrong, ENUM_TIMEFRAMES tf, string &patternName)
 {
     // Ambil titik XABCD dari chart
     double X = iHigh(_Symbol, tf, idxStart + 10);
@@ -1660,45 +2051,99 @@ bool DetectHarmonic(int idxStart,int idxEnd,Dir &signal,bool &isStrong,ENUM_TIME
     double B = iHigh(_Symbol, tf, idxStart + 6);
     double C = iLow(_Symbol, tf, idxStart + 4);
     double D = iClose(_Symbol, tf, idxStart);
-    
+
     HarmonicPatternSignal hps = DetectHarmonicPattern(X, A, B, C, D);
-    
-    if(hps.signal != DIR_NONE)
+
+    if (hps.signal != DIR_NONE)
     {
         signal = hps.signal;
         isStrong = hps.isStrong;
         patternName = hps.patternName;
         return true;
     }
-    
+
     return false;
 }
 
 //==================================================================
 // Fungsi utama pattern detection
 //==================================================================
-ChartPatternSignal GetChartPatternSignalUltimate(int idxStart,int idxEnd,ENUM_TIMEFRAMES tf=PERIOD_M15)
+ChartPatternSignal GetChartPatternSignalUltimate(int idxStart, int idxEnd, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
     ChartPatternSignal cps;
-    cps.signal=DIR_NONE;
-    cps.isStrong=false;
-    cps.patternName="None";
-    cps.confidence=0.0;
+    cps.signal = DIR_NONE;
+    cps.isStrong = false;
+    cps.patternName = "None";
+    cps.confidence = 0.0;
 
     double neckline;
-    bool strongFlag=false;
+    bool strongFlag = false;
     Dir signalDir;
-    string patternHarmonic="";
+    string patternHarmonic = "";
 
-    if(DetectDoubleTop(idxStart,idxEnd,neckline,strongFlag,tf)){ cps.signal=DIR_SELL; cps.isStrong=strongFlag; cps.patternName="Double Top"; return cps;}
-    if(DetectDoubleBottom(idxStart,idxEnd,neckline,strongFlag,tf)){ cps.signal=DIR_BUY; cps.isStrong=strongFlag; cps.patternName="Double Bottom"; return cps;}
-    if(DetectTriangle(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Triangle"; return cps;}
-    if(DetectHeadShoulders(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Head & Shoulders"; return cps;}
-    if(DetectInverseHeadShoulders(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Inverse H&S"; return cps;}
-    if(DetectWedge(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Wedge"; return cps;}
-    if(DetectFlag(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Flag/Pennant"; return cps;}
-    if(DetectCupHandle(idxStart,idxEnd,signalDir,strongFlag,tf)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName="Cup & Handle"; return cps;}
-    if(DetectHarmonic(idxStart,idxEnd,signalDir,strongFlag,tf,patternHarmonic)){ cps.signal=signalDir; cps.isStrong=strongFlag; cps.patternName=patternHarmonic; return cps;}
+    if (DetectDoubleTop(idxStart, idxEnd, neckline, strongFlag, tf))
+    {
+        cps.signal = DIR_SELL;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Double Top";
+        return cps;
+    }
+    if (DetectDoubleBottom(idxStart, idxEnd, neckline, strongFlag, tf))
+    {
+        cps.signal = DIR_BUY;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Double Bottom";
+        return cps;
+    }
+    if (DetectTriangle(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Triangle";
+        return cps;
+    }
+    if (DetectHeadShoulders(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Head & Shoulders";
+        return cps;
+    }
+    if (DetectInverseHeadShoulders(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Inverse H&S";
+        return cps;
+    }
+    if (DetectWedge(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Wedge";
+        return cps;
+    }
+    if (DetectFlag(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Flag/Pennant";
+        return cps;
+    }
+    if (DetectCupHandle(idxStart, idxEnd, signalDir, strongFlag, tf))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = "Cup & Handle";
+        return cps;
+    }
+    if (DetectHarmonic(idxStart, idxEnd, signalDir, strongFlag, tf, patternHarmonic))
+    {
+        cps.signal = signalDir;
+        cps.isStrong = strongFlag;
+        cps.patternName = patternHarmonic;
+        return cps;
+    }
 
     return cps;
 }
@@ -1706,13 +2151,13 @@ ChartPatternSignal GetChartPatternSignalUltimate(int idxStart,int idxEnd,ENUM_TI
 //==================================================================
 // Fungsi log
 //==================================================================
-void PrintChartPatternSignal(int idxStart,int idxEnd,ENUM_TIMEFRAMES tf=PERIOD_M15)
+void PrintChartPatternSignal(int idxStart, int idxEnd, ENUM_TIMEFRAMES tf = PERIOD_M15)
 {
-    ChartPatternSignal cps=GetChartPatternSignalUltimate(idxStart,idxEnd,tf);
-    string s=(cps.signal==DIR_BUY?"BUY":(cps.signal==DIR_SELL?"SELL":"NONE"));
-    string strength=cps.isStrong?"STRONG":"WEAK";
+    ChartPatternSignal cps = GetChartPatternSignalUltimate(idxStart, idxEnd, tf);
+    string s = (cps.signal == DIR_BUY ? "BUY" : (cps.signal == DIR_SELL ? "SELL" : "NONE"));
+    string strength = cps.isStrong ? "STRONG" : "WEAK";
     PrintFormat("ChartPattern Signal | Start:%d End:%d | TF:%s | Signal:%s | Strength:%s | Pattern:%s",
-                idxStart,idxEnd,EnumToString(tf),s,strength,cps.patternName);
+                idxStart, idxEnd, EnumToString(tf), s, strength, cps.patternName);
 }
 //+------------------------------------------------------------------+
 
@@ -1724,17 +2169,17 @@ struct HarmonicPatternSignal
     Dir signal;
     bool isStrong;
     string patternName;
-    double entryPrice;    // DITAMBAHKAN
-    double stopLoss;      // DITAMBAHKAN
-    double takeProfit;    // DITAMBAHKAN
+    double entryPrice; // DITAMBAHKAN
+    double stopLoss;   // DITAMBAHKAN
+    double takeProfit; // DITAMBAHKAN
 };
 
 //==================================================================
 // Fungsi rasio Fibonacci helper
 //==================================================================
-bool IsFibRatio(double actual, double target, double tolerance=0.03)
+bool IsFibRatio(double actual, double target, double tolerance = 0.03)
 {
-    return (MathAbs(actual-target)/target <= tolerance);
+    return (MathAbs(actual - target) / target <= tolerance);
 }
 
 //==================================================================
@@ -1746,19 +2191,19 @@ double GetDistance(double a, double b) { return MathAbs(b - a); }
 // Deteksi Gartley (XABCD)
 // Rasio: AB=0.618*XA, BC=0.382-0.886*AB, CD=1.272-1.618*BC
 //==================================================================
-bool DetectGartley(double X,double A,double B,double C,double D,Dir &signal,bool &isStrong)
+bool DetectGartley(double X, double A, double B, double C, double D, Dir &signal, bool &isStrong)
 {
     signal = DIR_NONE;
     isStrong = false;
 
-    double XA = GetDistance(X,A);
-    double AB = GetDistance(A,B);
-    double BC = GetDistance(B,C);
-    double CD = GetDistance(C,D);
+    double XA = GetDistance(X, A);
+    double AB = GetDistance(A, B);
+    double BC = GetDistance(B, C);
+    double CD = GetDistance(C, D);
 
-    if(IsFibRatio(AB,0.618*XA) &&
-       IsFibRatio(BC,0.382*AB) &&
-       IsFibRatio(CD,1.272*BC))
+    if (IsFibRatio(AB, 0.618 * XA) &&
+        IsFibRatio(BC, 0.382 * AB) &&
+        IsFibRatio(CD, 1.272 * BC))
     {
         signal = (D > C) ? DIR_BUY : DIR_SELL;
         isStrong = true;
@@ -1771,19 +2216,19 @@ bool DetectGartley(double X,double A,double B,double C,double D,Dir &signal,bool
 // Deteksi Bat (XABCD)
 // Rasio: AB=0.382-0.5*XA, BC=0.382-0.886*AB, CD=1.618-2.618*BC
 //==================================================================
-bool DetectBat(double X,double A,double B,double C,double D,Dir &signal,bool &isStrong)
+bool DetectBat(double X, double A, double B, double C, double D, Dir &signal, bool &isStrong)
 {
     signal = DIR_NONE;
     isStrong = false;
 
-    double XA = GetDistance(X,A);
-    double AB = GetDistance(A,B);
-    double BC = GetDistance(B,C);
-    double CD = GetDistance(C,D);
+    double XA = GetDistance(X, A);
+    double AB = GetDistance(A, B);
+    double BC = GetDistance(B, C);
+    double CD = GetDistance(C, D);
 
-    if(IsFibRatio(AB,0.382*XA) &&
-       IsFibRatio(BC,0.886*AB) &&
-       IsFibRatio(CD,1.618*BC))
+    if (IsFibRatio(AB, 0.382 * XA) &&
+        IsFibRatio(BC, 0.886 * AB) &&
+        IsFibRatio(CD, 1.618 * BC))
     {
         signal = (D > C) ? DIR_BUY : DIR_SELL;
         isStrong = true;
@@ -1796,19 +2241,19 @@ bool DetectBat(double X,double A,double B,double C,double D,Dir &signal,bool &is
 // Deteksi Butterfly (XABCD)
 // Rasio: AB=0.786*XA, BC=0.382-0.886*AB, CD=1.618-2.618*BC
 //==================================================================
-bool DetectButterfly(double X,double A,double B,double C,double D,Dir &signal,bool &isStrong)
+bool DetectButterfly(double X, double A, double B, double C, double D, Dir &signal, bool &isStrong)
 {
     signal = DIR_NONE;
     isStrong = false;
 
-    double XA = GetDistance(X,A);
-    double AB = GetDistance(A,B);
-    double BC = GetDistance(B,C);
-    double CD = GetDistance(C,D);
+    double XA = GetDistance(X, A);
+    double AB = GetDistance(A, B);
+    double BC = GetDistance(B, C);
+    double CD = GetDistance(C, D);
 
-    if(IsFibRatio(AB,0.786*XA) &&
-       IsFibRatio(BC,0.382*AB) &&
-       IsFibRatio(CD,1.618*BC))
+    if (IsFibRatio(AB, 0.786 * XA) &&
+        IsFibRatio(BC, 0.382 * AB) &&
+        IsFibRatio(CD, 1.618 * BC))
     {
         signal = (D > C) ? DIR_BUY : DIR_SELL;
         isStrong = true;
@@ -1821,19 +2266,19 @@ bool DetectButterfly(double X,double A,double B,double C,double D,Dir &signal,bo
 // Deteksi Crab (XABCD)
 // Rasio: AB=0.382-0.618*XA, BC=0.382-0.886*AB, CD=2.618-3.618*BC
 //==================================================================
-bool DetectCrab(double X,double A,double B,double C,double D,Dir &signal,bool &isStrong)
+bool DetectCrab(double X, double A, double B, double C, double D, Dir &signal, bool &isStrong)
 {
     signal = DIR_NONE;
     isStrong = false;
 
-    double XA = GetDistance(X,A);
-    double AB = GetDistance(A,B);
-    double BC = GetDistance(B,C);
-    double CD = GetDistance(C,D);
+    double XA = GetDistance(X, A);
+    double AB = GetDistance(A, B);
+    double BC = GetDistance(B, C);
+    double CD = GetDistance(C, D);
 
-    if(IsFibRatio(AB,0.618*XA) &&
-       IsFibRatio(BC,0.886*AB) &&
-       IsFibRatio(CD,2.618*BC))
+    if (IsFibRatio(AB, 0.618 * XA) &&
+        IsFibRatio(BC, 0.886 * AB) &&
+        IsFibRatio(CD, 2.618 * BC))
     {
         signal = (D > C) ? DIR_BUY : DIR_SELL;
         isStrong = true;
@@ -1845,7 +2290,7 @@ bool DetectCrab(double X,double A,double B,double C,double D,Dir &signal,bool &i
 //==================================================================
 // Fungsi utama deteksi harmonic pattern
 //==================================================================
-HarmonicPatternSignal DetectHarmonicPattern(double X,double A,double B,double C,double D)
+HarmonicPatternSignal DetectHarmonicPattern(double X, double A, double B, double C, double D)
 {
     HarmonicPatternSignal hps;
     hps.signal = DIR_NONE;
@@ -1855,10 +2300,34 @@ HarmonicPatternSignal DetectHarmonicPattern(double X,double A,double B,double C,
     Dir sig;
     bool strongFlag;
 
-    if(DetectGartley(X,A,B,C,D,sig,strongFlag)){ hps.signal=sig; hps.isStrong=strongFlag; hps.patternName="Gartley"; return hps;}
-    if(DetectBat(X,A,B,C,D,sig,strongFlag)){ hps.signal=sig; hps.isStrong=strongFlag; hps.patternName="Bat"; return hps;}
-    if(DetectButterfly(X,A,B,C,D,sig,strongFlag)){ hps.signal=sig; hps.isStrong=strongFlag; hps.patternName="Butterfly"; return hps;}
-    if(DetectCrab(X,A,B,C,D,sig,strongFlag)){ hps.signal=sig; hps.isStrong=strongFlag; hps.patternName="Crab"; return hps;}
+    if (DetectGartley(X, A, B, C, D, sig, strongFlag))
+    {
+        hps.signal = sig;
+        hps.isStrong = strongFlag;
+        hps.patternName = "Gartley";
+        return hps;
+    }
+    if (DetectBat(X, A, B, C, D, sig, strongFlag))
+    {
+        hps.signal = sig;
+        hps.isStrong = strongFlag;
+        hps.patternName = "Bat";
+        return hps;
+    }
+    if (DetectButterfly(X, A, B, C, D, sig, strongFlag))
+    {
+        hps.signal = sig;
+        hps.isStrong = strongFlag;
+        hps.patternName = "Butterfly";
+        return hps;
+    }
+    if (DetectCrab(X, A, B, C, D, sig, strongFlag))
+    {
+        hps.signal = sig;
+        hps.isStrong = strongFlag;
+        hps.patternName = "Crab";
+        return hps;
+    }
 
     return hps;
 }
@@ -1866,12 +2335,12 @@ HarmonicPatternSignal DetectHarmonicPattern(double X,double A,double B,double C,
 //==================================================================
 // Fungsi log harmonic pattern
 //==================================================================
-void PrintHarmonicPatternSignal(double X,double A,double B,double C,double D)
+void PrintHarmonicPatternSignal(double X, double A, double B, double C, double D)
 {
-    HarmonicPatternSignal hps = DetectHarmonicPattern(X,A,B,C,D);
-    string s = (hps.signal==DIR_BUY?"BUY":(hps.signal==DIR_SELL?"SELL":"NONE"));
-    string strength = hps.isStrong?"STRONG":"WEAK";
-    PrintFormat("Harmonic Pattern | Signal:%s | Strength:%s | Pattern:%s", s,strength,hps.patternName);
+    HarmonicPatternSignal hps = DetectHarmonicPattern(X, A, B, C, D);
+    string s = (hps.signal == DIR_BUY ? "BUY" : (hps.signal == DIR_SELL ? "SELL" : "NONE"));
+    string strength = hps.isStrong ? "STRONG" : "WEAK";
+    PrintFormat("Harmonic Pattern | Signal:%s | Strength:%s | Pattern:%s", s, strength, hps.patternName);
 }
 
 //+------------------------------------------------------------------+
@@ -1880,14 +2349,14 @@ void PrintHarmonicPatternSignal(double X,double A,double B,double C,double D)
 enum IcebergLevel
 {
     ICE_NONE,
-    ICE_WEAK, 
+    ICE_WEAK,
     ICE_STRONG
 };
 
 //+------------------------------------------------------------------+
 //| Input Parameters untuk Iceberg                                  |
 //+------------------------------------------------------------------+
-input int LookbackCandlesAdvanced = 20;    // Lookback untuk volume average
+input int LookbackCandlesAdvanced = 20;      // Lookback untuk volume average
 input double VolumeMultiplierAdvanced = 2.0; // Multiplier untuk spike volume
 
 //==================================================================
@@ -1898,12 +2367,12 @@ input double VolumeMultiplierAdvanced = 2.0; // Multiplier untuk spike volume
 bool DetectIcebergSimple(int idx)
 {
     double volCurrent = (double)iVolume(_Symbol, PERIOD_CURRENT, idx);
-    double volPrev = (double)iVolume(_Symbol, PERIOD_CURRENT, idx+1);
+    double volPrev = (double)iVolume(_Symbol, PERIOD_CURRENT, idx + 1);
     return (volCurrent >= volPrev * 2.0);
 }
 
 //==================================================================
-// Fungsi: DetectIcebergAdvanced  
+// Fungsi: DetectIcebergAdvanced
 // Parameter: idx = candle index
 // Return: IcebergLevel (NONE, WEAK, STRONG)
 //==================================================================
@@ -1911,20 +2380,21 @@ IcebergLevel DetectIcebergAdvanced(int idx)
 {
     double sumVolume = 0;
     int lookback = LookbackCandlesAdvanced;
-    
-    if(Bars(_Symbol, PERIOD_CURRENT) <= lookback) return ICE_NONE;
-    
-    for(int i = idx + 1; i <= idx + lookback; i++)
+
+    if (Bars(_Symbol, PERIOD_CURRENT) <= lookback)
+        return ICE_NONE;
+
+    for (int i = idx + 1; i <= idx + lookback; i++)
         sumVolume += (double)iVolume(_Symbol, PERIOD_CURRENT, i);
-        
+
     double avgVolume = sumVolume / lookback;
     double lastVolume = (double)iVolume(_Symbol, PERIOD_CURRENT, idx);
-    
-    if(lastVolume >= avgVolume * VolumeMultiplierAdvanced * 1.5)
+
+    if (lastVolume >= avgVolume * VolumeMultiplierAdvanced * 1.5)
         return ICE_STRONG;
-    else if(lastVolume >= avgVolume * VolumeMultiplierAdvanced)
+    else if (lastVolume >= avgVolume * VolumeMultiplierAdvanced)
         return ICE_WEAK;
-        
+
     return ICE_NONE;
 }
 
@@ -1940,17 +2410,20 @@ IcebergLevel DetectIcebergMultiTF(ENUM_TIMEFRAMES tfFast, ENUM_TIMEFRAMES tfSlow
     // switch symbol ke slow TF
     double sumVolumeSlow = 0;
     int lookback = LookbackCandlesAdvanced;
-    if(Bars(_Symbol, tfSlow) <= lookback) return ICE_NONE;
-    for(int i=idx+1; i<=idx+lookback; i++)
+    if (Bars(_Symbol, tfSlow) <= lookback)
+        return ICE_NONE;
+    for (int i = idx + 1; i <= idx + lookback; i++)
         sumVolumeSlow += (double)iVolume(_Symbol, tfSlow, i);
-    double avgVolumeSlow = sumVolumeSlow/lookback;
+    double avgVolumeSlow = sumVolumeSlow / lookback;
     double lastVolumeSlow = (double)iVolume(_Symbol, tfSlow, idx);
 
     bool slowSpike = lastVolumeSlow >= avgVolumeSlow * VolumeMultiplierAdvanced;
 
     // Gabungkan logika: jika keduanya spike → STRONG, jika salah satu → WEAK
-    if(fast==ICE_STRONG && slowSpike) return ICE_STRONG;
-    if(fast!=ICE_NONE || slowSpike) return ICE_WEAK;
+    if (fast == ICE_STRONG && slowSpike)
+        return ICE_STRONG;
+    if (fast != ICE_NONE || slowSpike)
+        return ICE_WEAK;
 
     return ICE_NONE;
 }
@@ -1965,11 +2438,11 @@ void PrintIcebergSignal(int idx)
     IcebergLevel adv = DetectIcebergAdvanced(idx);
     IcebergLevel multi = DetectIcebergMultiTF(PERIOD_M5, PERIOD_H1, idx);
 
-    string sAdv = (adv==ICE_STRONG?"STRONG":(adv==ICE_WEAK?"WEAK":"NONE"));
-    string sMulti = (multi==ICE_STRONG?"STRONG":(multi==ICE_WEAK?"WEAK":"NONE"));
+    string sAdv = (adv == ICE_STRONG ? "STRONG" : (adv == ICE_WEAK ? "WEAK" : "NONE"));
+    string sMulti = (multi == ICE_STRONG ? "STRONG" : (multi == ICE_WEAK ? "WEAK" : "NONE"));
 
     PrintFormat("Iceberg | CandleIdx:%d | Simple:%s | Advanced:%s | MultiTF:%s",
-                idx, simple?"YES":"NO", sAdv, sMulti);
+                idx, simple ? "YES" : "NO", sAdv, sMulti);
 }
 
 //+------------------------------------------------------------------+
@@ -1982,12 +2455,12 @@ input ENUM_APPLIED_PRICE MAPrice = PRICE_CLOSE;
 input int ATRPeriod = 14;
 
 //--- Weighting tiap indikator makro (0-1)
-input double WeightDXY   = 0.5;
-input double WeightGold  = 0.3;
+input double WeightDXY = 0.5;
+input double WeightGold = 0.3;
 input double WeightYield = 0.2;
 
 //--- Threshold total score untuk entry
-input double BuyThreshold  = 0.6;
+input double BuyThreshold = 0.6;
 input double SellThreshold = -0.6;
 
 //==================================================================
@@ -1999,51 +2472,52 @@ input double SellThreshold = -0.6;
 //==================================================================
 double GetMacroScore(string symbolName, ENUM_TIMEFRAMES timeframe)
 {
-   if(!SymbolSelect(symbolName,true)) 
-   {
-      Print("Symbol not found: ", symbolName);
-      return 0;
-   }
+    if (!SymbolSelect(symbolName, true))
+    {
+        Print("Symbol not found: ", symbolName);
+        return 0;
+    }
 
-   // Get price data
-   double closeArray[], prevCloseArray[];
-   ArraySetAsSeries(closeArray, true);
-   ArraySetAsSeries(prevCloseArray, true);
-   
-   CopyClose(symbolName, timeframe, 0, 2, closeArray);
-   CopyClose(symbolName, timeframe, 1, 2, prevCloseArray);
-   
-   double closePrice = closeArray[0];
-   double prevClose  = prevCloseArray[1];
+    // Get price data
+    double closeArray[], prevCloseArray[];
+    ArraySetAsSeries(closeArray, true);
+    ArraySetAsSeries(prevCloseArray, true);
 
-   // Get MA data
-   int maHandle = iMA(symbolName, timeframe, MAPeriod, 0, MAMethod, MAPrice);
-   double maArray[];
-   ArraySetAsSeries(maArray, true);
-   CopyBuffer(maHandle, 0, 0, 2, maArray);
-   
-   double maCurrent = maArray[0];
-   double maPrev    = maArray[1];
+    CopyClose(symbolName, timeframe, 0, 2, closeArray);
+    CopyClose(symbolName, timeframe, 1, 2, prevCloseArray);
 
-   // Get ATR data
-   int atrHandle = iATR(symbolName, timeframe, ATRPeriod);
-   double atrArray[];
-   ArraySetAsSeries(atrArray, true);
-   CopyBuffer(atrHandle, 0, 0, 1, atrArray);
-   
-   double atr = atrArray[0];
-   double maSlope = maCurrent - maPrev;
+    double closePrice = closeArray[0];
+    double prevClose = prevCloseArray[1];
 
-   // jika volatilitas terlalu rendah dibanding slope → sinyal netral
-   if(atr < 0.1 * MathAbs(maSlope)) return 0;
+    // Get MA data
+    int maHandle = iMA(symbolName, timeframe, MAPeriod, 0, MAMethod, MAPrice);
+    double maArray[];
+    ArraySetAsSeries(maArray, true);
+    CopyBuffer(maHandle, 0, 0, 2, maArray);
 
-   // cross MA
-   if(prevClose < maPrev && closePrice > maCurrent && maSlope > 0)
-      return 1.0;   // buy
-   if(prevClose > maPrev && closePrice < maCurrent && maSlope < 0)
-      return -1.0;  // sell
+    double maCurrent = maArray[0];
+    double maPrev = maArray[1];
 
-   return 0;        // netral
+    // Get ATR data
+    int atrHandle = iATR(symbolName, timeframe, ATRPeriod);
+    double atrArray[];
+    ArraySetAsSeries(atrArray, true);
+    CopyBuffer(atrHandle, 0, 0, 1, atrArray);
+
+    double atr = atrArray[0];
+    double maSlope = maCurrent - maPrev;
+
+    // jika volatilitas terlalu rendah dibanding slope → sinyal netral
+    if (atr < 0.1 * MathAbs(maSlope))
+        return 0;
+
+    // cross MA
+    if (prevClose < maPrev && closePrice > maCurrent && maSlope > 0)
+        return 1.0; // buy
+    if (prevClose > maPrev && closePrice < maCurrent && maSlope < 0)
+        return -1.0; // sell
+
+    return 0; // netral
 }
 
 //==================================================================
@@ -2054,15 +2528,17 @@ double GetMacroScore(string symbolName, ENUM_TIMEFRAMES timeframe)
 //==================================================================
 Dir GetMacroSignalUltimate()
 {
-   double score = 0;
-   score += GetMacroScore("DXY", PERIOD_H1) * WeightDXY;
-   score += GetMacroScore("XAUUSD", PERIOD_H1) * WeightGold;
-   score += GetMacroScore("US10Y", PERIOD_H1) * WeightYield;
+    double score = 0;
+    score += GetMacroScore("DXY", PERIOD_H1) * WeightDXY;
+    score += GetMacroScore("XAUUSD", PERIOD_H1) * WeightGold;
+    score += GetMacroScore("US10Y", PERIOD_H1) * WeightYield;
 
-   if(score >= BuyThreshold) return DIR_BUY;
-   if(score <= SellThreshold) return DIR_SELL;
+    if (score >= BuyThreshold)
+        return DIR_BUY;
+    if (score <= SellThreshold)
+        return DIR_SELL;
 
-   return DIR_NONE;
+    return DIR_NONE;
 }
 
 //==================================================================
@@ -2072,56 +2548,56 @@ Dir GetMacroSignalUltimate()
 //==================================================================
 void PrintMacroUltimate()
 {
-   double sDXY   = GetMacroScore("DXY", PERIOD_H1);
-   double sGold  = GetMacroScore("XAUUSD", PERIOD_H1);
-   double sYield = GetMacroScore("US10Y", PERIOD_H1);
-   double total  = sDXY * WeightDXY + sGold * WeightGold + sYield * WeightYield;
-   Dir combined  = GetMacroSignalUltimate();
+    double sDXY = GetMacroScore("DXY", PERIOD_H1);
+    double sGold = GetMacroScore("XAUUSD", PERIOD_H1);
+    double sYield = GetMacroScore("US10Y", PERIOD_H1);
+    double total = sDXY * WeightDXY + sGold * WeightGold + sYield * WeightYield;
+    Dir combined = GetMacroSignalUltimate();
 
-   string SigStr = (combined == DIR_BUY ? "BUY" : (combined == DIR_SELL ? "SELL" : "NONE"));
+    string SigStr = (combined == DIR_BUY ? "BUY" : (combined == DIR_SELL ? "SELL" : "NONE"));
 
-   PrintFormat("Macro Ultimate Scores | DXY:%.2f Gold:%.2f Yield:%.2f | Total:%.2f | COMBINED:%s",
-               sDXY, sGold, sYield, total, SigStr);
+    PrintFormat("Macro Ultimate Scores | DXY:%.2f Gold:%.2f Yield:%.2f | Total:%.2f | COMBINED:%s",
+                sDXY, sGold, sYield, total, SigStr);
 }
 
 //+------------------------------------------------------------------+
 //| Momentum & Multi-Timeframe Parameters                           |
 //+------------------------------------------------------------------+
-input ENUM_TIMEFRAMES TF_Entry         = PERIOD_M5;    // timeframe entry
-input ENUM_TIMEFRAMES TF_Confirm1     = PERIOD_M15;     // confirm timeframe 1
-input ENUM_TIMEFRAMES TF_Confirm2     = PERIOD_H1;     // confirm timeframe 2
-input int EMA_Period                   = 200;           // EMA trend filter
+input ENUM_TIMEFRAMES TF_Entry = PERIOD_M5;     // timeframe entry
+input ENUM_TIMEFRAMES TF_Confirm1 = PERIOD_M15; // confirm timeframe 1
+input ENUM_TIMEFRAMES TF_Confirm2 = PERIOD_H1;  // confirm timeframe 2
+input int EMA_Period = 200;                     // EMA trend filter
 
-input double MinBodyPoints             = 200;            // minimal body in points
-input double MaxWickPercent            = 0.35;          // max wick / range
-input double StrongSignalMinBody       = 40;            // strong if >= this
-input double AggressiveMultiplier      = 2.0;           // TP = body * multiplier
+input double MinBodyPoints = 200;        // minimal body in points
+input double MaxWickPercent = 0.35;      // max wick / range
+input double StrongSignalMinBody = 40;   // strong if >= this
+input double AggressiveMultiplier = 2.0; // TP = body * multiplier
 
-input bool  UseFractalConfirmation     = true;          // require fractal MS confirmation
-input int   FractalLookback            = 30;            // lookback for fractals
+input bool UseFractalConfirmation = true; // require fractal MS confirmation
+input int FractalLookback = 30;           // lookback for fractals
 
-input double RiskPercentPerTrade       = 1.0;           // risk % per trade
-input double MaxSpreadPoints           = 50;            // filter max spread (points)
+input double RiskPercentPerTrade = 50.0; // risk % per trade
+input double MaxSpreadPoints = 50;      // filter max spread (points)
 
-input int    MagicNumber               = 20250928;
-input double SlippagePips              = 3;             // slippage in pips
+input int MagicNumber = 20250928;
+input double SlippagePips = 3; // slippage in pips
 
 //+------------------------------------------------------------------+
 //| Risk Reward Info Structure                                      |
 //+------------------------------------------------------------------+
 struct RiskRewardInfo
 {
-   double entryPrice;
-   double stopLoss;
-   double takeProfit;
-   double riskRewardRatio;
+    double entryPrice;
+    double stopLoss;
+    double takeProfit;
+    double riskRewardRatio;
 };
 
 //==================================================================
 // Helper Functions
 //==================================================================
 double GetPoint() { return SymbolInfoDouble(_Symbol, SYMBOL_POINT); }
-int GetDigits()  { return (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS); }
+int GetDigits() { return (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS); }
 
 double AskPrice(ENUM_TIMEFRAMES tf) { return SymbolInfoDouble(_Symbol, SYMBOL_ASK); }
 double BidPrice(ENUM_TIMEFRAMES tf) { return SymbolInfoDouble(_Symbol, SYMBOL_BID); }
@@ -2131,22 +2607,25 @@ double BidPrice(ENUM_TIMEFRAMES tf) { return SymbolInfoDouble(_Symbol, SYMBOL_BI
 //==================================================================
 bool IsTrendAligned(ENUM_TIMEFRAMES tf, int idx, Dir dir)
 {
-   // Get EMA data
-   int emaHandle = iMA(_Symbol, tf, EMA_Period, 0, MODE_EMA, PRICE_CLOSE);
-   double emaArray[], priceArray[];
-   ArraySetAsSeries(emaArray, true);
-   ArraySetAsSeries(priceArray, true);
-   
-   CopyBuffer(emaHandle, 0, 0, idx+1, emaArray);
-   CopyClose(_Symbol, tf, 0, idx+1, priceArray);
-   
-   double ema = emaArray[idx];
-   double price = priceArray[idx];
-   
-   if(ema == 0) return false;
-   if(dir == DIR_BUY) return price > ema;
-   if(dir == DIR_SELL) return price < ema;
-   return false;
+    // Get EMA data
+    int emaHandle = iMA(_Symbol, tf, EMA_Period, 0, MODE_EMA, PRICE_CLOSE);
+    double emaArray[], priceArray[];
+    ArraySetAsSeries(emaArray, true);
+    ArraySetAsSeries(priceArray, true);
+
+    CopyBuffer(emaHandle, 0, 0, idx + 1, emaArray);
+    CopyClose(_Symbol, tf, 0, idx + 1, priceArray);
+
+    double ema = emaArray[idx];
+    double price = priceArray[idx];
+
+    if (ema == 0)
+        return false;
+    if (dir == DIR_BUY)
+        return price > ema;
+    if (dir == DIR_SELL)
+        return price < ema;
+    return false;
 }
 
 //==================================================================
@@ -2154,39 +2633,45 @@ bool IsTrendAligned(ENUM_TIMEFRAMES tf, int idx, Dir dir)
 //==================================================================
 Dir AnalyzeFractalMS(ENUM_TIMEFRAMES tf, int lookback)
 {
-   if(Bars(_Symbol, tf) < lookback + 5) return DIR_NONE;
+    if (Bars(_Symbol, tf) < lookback + 5)
+        return DIR_NONE;
 
-   int lastFractalHigh = -1, lastFractalLow = -1;
+    int lastFractalHigh = -1, lastFractalLow = -1;
 
-   for(int i = 2; i < lookback; i++)
-   {
-      double h = iHigh(_Symbol, tf, i);
-      if(h > iHigh(_Symbol, tf, i+1) && h > iHigh(_Symbol, tf, i+2) &&
-         h > iHigh(_Symbol, tf, i-1) && h > iHigh(_Symbol, tf, i-2))
-      {
-         lastFractalHigh = i; break;
-      }
-   }
-   for(int i = 2; i < lookback; i++)
-   {
-      double l = iLow(_Symbol, tf, i);
-      if(l < iLow(_Symbol, tf, i+1) && l < iLow(_Symbol, tf, i+2) &&
-         l < iLow(_Symbol, tf, i-1) && l < iLow(_Symbol, tf, i-2))
-      {
-         lastFractalLow = i; break;
-      }
-   }
+    for (int i = 2; i < lookback; i++)
+    {
+        double h = iHigh(_Symbol, tf, i);
+        if (h > iHigh(_Symbol, tf, i + 1) && h > iHigh(_Symbol, tf, i + 2) &&
+            h > iHigh(_Symbol, tf, i - 1) && h > iHigh(_Symbol, tf, i - 2))
+        {
+            lastFractalHigh = i;
+            break;
+        }
+    }
+    for (int i = 2; i < lookback; i++)
+    {
+        double l = iLow(_Symbol, tf, i);
+        if (l < iLow(_Symbol, tf, i + 1) && l < iLow(_Symbol, tf, i + 2) &&
+            l < iLow(_Symbol, tf, i - 1) && l < iLow(_Symbol, tf, i - 2))
+        {
+            lastFractalLow = i;
+            break;
+        }
+    }
 
-   if(lastFractalHigh == -1 || lastFractalLow == -1) return DIR_NONE;
+    if (lastFractalHigh == -1 || lastFractalLow == -1)
+        return DIR_NONE;
 
-   double high1 = iHigh(_Symbol, tf, lastFractalHigh + 5);
-   double high2 = iHigh(_Symbol, tf, lastFractalHigh);
-   double low1  = iLow(_Symbol, tf, lastFractalLow + 5);
-   double low2  = iLow(_Symbol, tf, lastFractalLow);
+    double high1 = iHigh(_Symbol, tf, lastFractalHigh + 5);
+    double high2 = iHigh(_Symbol, tf, lastFractalHigh);
+    double low1 = iLow(_Symbol, tf, lastFractalLow + 5);
+    double low2 = iLow(_Symbol, tf, lastFractalLow);
 
-   if(high2 > high1 && low2 > low1) return DIR_BUY;
-   if(high2 < high1 && low2 < low1) return DIR_SELL;
-   return DIR_NONE;
+    if (high2 > high1 && low2 > low1)
+        return DIR_BUY;
+    if (high2 < high1 && low2 < low1)
+        return DIR_SELL;
+    return DIR_NONE;
 }
 
 //==================================================================
@@ -2194,51 +2679,58 @@ Dir AnalyzeFractalMS(ENUM_TIMEFRAMES tf, int lookback)
 //==================================================================
 Dir DetectMomentumTF(ENUM_TIMEFRAMES tf, int idx, bool &isStrongSignal, RiskRewardInfo &rrInfo)
 {
-   double op = iOpen(_Symbol, tf, idx);
-   double cl = iClose(_Symbol, tf, idx);
-   double hi = iHigh(_Symbol, tf, idx);
-   double lo = iLow(_Symbol, tf, idx);
-   double pt = GetPoint();
+    double op = iOpen(_Symbol, tf, idx);
+    double cl = iClose(_Symbol, tf, idx);
+    double hi = iHigh(_Symbol, tf, idx);
+    double lo = iLow(_Symbol, tf, idx);
+    double pt = GetPoint();
 
-   if(op == 0 || cl == 0 || hi == 0 || lo == 0) return DIR_NONE;
+    if (op == 0 || cl == 0 || hi == 0 || lo == 0)
+        return DIR_NONE;
 
-   double bodyPts  = MathAbs(cl - op) / pt;
-   double rangePts = (hi - lo) / pt;
-   if(rangePts <= 0) return DIR_NONE;
+    double bodyPts = MathAbs(cl - op) / pt;
+    double rangePts = (hi - lo) / pt;
+    if (rangePts <= 0)
+        return DIR_NONE;
 
-   double wickTop    = hi - MathMax(op, cl);
-   double wickBottom = MathMin(op, cl) - lo;
-   double maxWick    = MathMax(wickTop, wickBottom) / (hi - lo);
+    double wickTop = hi - MathMax(op, cl);
+    double wickBottom = MathMin(op, cl) - lo;
+    double maxWick = MathMax(wickTop, wickBottom) / (hi - lo);
 
-   isStrongSignal = false;
-   rrInfo.entryPrice = cl; 
-   rrInfo.stopLoss = 0; 
-   rrInfo.takeProfit = 0; 
-   rrInfo.riskRewardRatio = 0;
+    isStrongSignal = false;
+    rrInfo.entryPrice = cl;
+    rrInfo.stopLoss = 0;
+    rrInfo.takeProfit = 0;
+    rrInfo.riskRewardRatio = 0;
 
-   if(bodyPts < MinBodyPoints) return DIR_NONE;
-   if(maxWick > MaxWickPercent) return DIR_NONE;
+    if (bodyPts < MinBodyPoints)
+        return DIR_NONE;
+    if (maxWick > MaxWickPercent)
+        return DIR_NONE;
 
-   Dir dir = DIR_NONE;
-   if(cl > op) dir = DIR_BUY;
-   if(cl < op) dir = DIR_SELL;
+    Dir dir = DIR_NONE;
+    if (cl > op)
+        dir = DIR_BUY;
+    if (cl < op)
+        dir = DIR_SELL;
 
-   if(bodyPts >= StrongSignalMinBody) isStrongSignal = true;
+    if (bodyPts >= StrongSignalMinBody)
+        isStrongSignal = true;
 
-   if(dir == DIR_BUY)
-   {
-      rrInfo.stopLoss   = lo;
-      rrInfo.takeProfit = cl + (cl - lo) * AggressiveMultiplier;
-      rrInfo.riskRewardRatio = (rrInfo.takeProfit - cl) / (cl - rrInfo.stopLoss);
-   }
-   else if(dir == DIR_SELL)
-   {
-      rrInfo.stopLoss   = hi;
-      rrInfo.takeProfit = cl - (hi - cl) * AggressiveMultiplier;
-      rrInfo.riskRewardRatio = (cl - rrInfo.takeProfit) / (rrInfo.stopLoss - cl);
-   }
+    if (dir == DIR_BUY)
+    {
+        rrInfo.stopLoss = lo;
+        rrInfo.takeProfit = cl + (cl - lo) * AggressiveMultiplier;
+        rrInfo.riskRewardRatio = (rrInfo.takeProfit - cl) / (cl - rrInfo.stopLoss);
+    }
+    else if (dir == DIR_SELL)
+    {
+        rrInfo.stopLoss = hi;
+        rrInfo.takeProfit = cl - (hi - cl) * AggressiveMultiplier;
+        rrInfo.riskRewardRatio = (cl - rrInfo.takeProfit) / (rrInfo.stopLoss - cl);
+    }
 
-   return dir;
+    return dir;
 }
 
 //==================================================================
@@ -2246,21 +2738,23 @@ Dir DetectMomentumTF(ENUM_TIMEFRAMES tf, int idx, bool &isStrongSignal, RiskRewa
 //==================================================================
 bool ConfirmMultiTF(Dir dir)
 {
-   // Entry TF quick check (latest closed bar idx=1)
-   bool ok1 = IsTrendAligned(TF_Entry, 1, dir);
-   bool ok2 = IsTrendAligned(TF_Confirm1, 1, dir);
-   bool ok3 = IsTrendAligned(TF_Confirm2, 1, dir);
+    // Entry TF quick check (latest closed bar idx=1)
+    bool ok1 = IsTrendAligned(TF_Entry, 1, dir);
+    bool ok2 = IsTrendAligned(TF_Confirm1, 1, dir);
+    bool ok3 = IsTrendAligned(TF_Confirm2, 1, dir);
 
-   if(!ok1 || !ok2 || !ok3) return false;
+    if (!ok1 || !ok2 || !ok3)
+        return false;
 
-   if(UseFractalConfirmation)
-   {
-      Dir ms1 = AnalyzeFractalMS(TF_Confirm1, FractalLookback);
-      Dir ms2 = AnalyzeFractalMS(TF_Confirm2, FractalLookback);
-      if(ms1 != dir || ms2 != dir) return false;
-   }
+    if (UseFractalConfirmation)
+    {
+        Dir ms1 = AnalyzeFractalMS(TF_Confirm1, FractalLookback);
+        Dir ms2 = AnalyzeFractalMS(TF_Confirm2, FractalLookback);
+        if (ms1 != dir || ms2 != dir)
+            return false;
+    }
 
-   return true;
+    return true;
 }
 
 //==================================================================
@@ -2268,18 +2762,20 @@ bool ConfirmMultiTF(Dir dir)
 //==================================================================
 Dir GetMomentumSignal()
 {
-   bool isStrong = false;
-   RiskRewardInfo rrInfo;
-   
-   // Check momentum on entry timeframe
-   Dir momentumDir = DetectMomentumTF(TF_Entry, 1, isStrong, rrInfo);
-   
-   if(momentumDir == DIR_NONE) return DIR_NONE;
-   
-   // Check multi-timeframe confirmation
-   if(!ConfirmMultiTF(momentumDir)) return DIR_NONE;
-   
-   return momentumDir;
+    bool isStrong = false;
+    RiskRewardInfo rrInfo;
+
+    // Check momentum on entry timeframe
+    Dir momentumDir = DetectMomentumTF(TF_Entry, 1, isStrong, rrInfo);
+
+    if (momentumDir == DIR_NONE)
+        return DIR_NONE;
+
+    // Check multi-timeframe confirmation
+    if (!ConfirmMultiTF(momentumDir))
+        return DIR_NONE;
+
+    return momentumDir;
 }
 
 //+------------------------------------------------------------------+
@@ -2324,10 +2820,10 @@ struct MomentumSignal
 //+------------------------------------------------------------------+
 //| Momentum Pullback Parameters                                    |
 //+------------------------------------------------------------------+
-input ENUM_TIMEFRAMES MomentumTF = PERIOD_M5;        // Timeframe untuk momentum detection
-input ENUM_TIMEFRAMES MomentumHTF = PERIOD_M15;        // Higher timeframe untuk konfirmasi
-input int MomentumLookback = 100;                     // Lookback bars untuk momentum
-input bool UseMomentumPullback = true;                // Aktifkan momentum pullback detection
+input ENUM_TIMEFRAMES MomentumTF = PERIOD_M5;   // Timeframe untuk momentum detection
+input ENUM_TIMEFRAMES MomentumHTF = PERIOD_M15; // Higher timeframe untuk konfirmasi
+input int MomentumLookback = 100;               // Lookback bars untuk momentum
+input bool UseMomentumPullback = true;          // Aktifkan momentum pullback detection
 
 //==================================================================
 // Helper Functions untuk Momentum Pullback
@@ -2341,9 +2837,11 @@ int CandleDir(int shift, ENUM_TIMEFRAMES tf)
 {
     double open = iOpen(_Symbol, tf, shift);
     double close = iClose(_Symbol, tf, shift);
-    if(close > open) return 1;   // Bullish
-    if(close < open) return -1;  // Bearish
-    return 0;                    // Doji
+    if (close > open)
+        return 1; // Bullish
+    if (close < open)
+        return -1; // Bearish
+    return 0;      // Doji
 }
 
 double CandleBody(int shift, ENUM_TIMEFRAMES tf)
@@ -2359,7 +2857,7 @@ bool IsEngulfing(int shift, ENUM_TIMEFRAMES tf)
     double bodyPrev = CandleBody(shift + 1, tf);
     int dirCurrent = CandleDir(shift, tf);
     int dirPrev = CandleDir(shift + 1, tf);
-    
+
     return (bodyCurrent > bodyPrev && dirCurrent != dirPrev && dirCurrent != 0);
 }
 
@@ -2369,14 +2867,15 @@ bool IsPinbar(int shift, ENUM_TIMEFRAMES tf)
     double low = iLow(_Symbol, tf, shift);
     double open = iOpen(_Symbol, tf, shift);
     double close = iClose(_Symbol, tf, shift);
-    
+
     double body = MathAbs(close - open);
     double upperWick = high - MathMax(open, close);
     double lowerWick = MathMin(open, close) - low;
     double totalRange = high - low;
-    
-    if(totalRange == 0) return false;
-    
+
+    if (totalRange == 0)
+        return false;
+
     // Pinbar: salah satu wick > 2/3 total range dan body < 1/3 total range
     return ((upperWick > totalRange * 0.66 && body < totalRange * 0.33) ||
             (lowerWick > totalRange * 0.66 && body < totalRange * 0.33));
@@ -2387,10 +2886,10 @@ double CalculateLotFromRisk(double stopLoss, double entryPrice)
     double riskMoney = AccountInfoDouble(ACCOUNT_BALANCE) * (RiskPercentPerTrade / 100.0);
     double riskPips = MathAbs(entryPrice - stopLoss) / _Point / 10;
     double pipValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-    
-    if(pipValue > 0 && riskPips > 0)
+
+    if (pipValue > 0 && riskPips > 0)
         return riskMoney / (riskPips * pipValue);
-    
+
     return 0.1; // default lot
 }
 
@@ -2399,112 +2898,134 @@ double CalculateLotFromRisk(double stopLoss, double entryPrice)
 //==================================================================
 bool DetectMomentumPullback(ENUM_TIMEFRAMES tf, MomentumSignal &outSignal, int lookbackBars = 100)
 {
-   outSignal.found = false;
+    outSignal.found = false;
 
-   // Minimal bars
-   if(lookbackBars < MomentumCfg::minConsecutive + 1) 
-      lookbackBars = MomentumCfg::minConsecutive + 1;
+    // Minimal bars
+    if (lookbackBars < MomentumCfg::minConsecutive + 1)
+        lookbackBars = MomentumCfg::minConsecutive + 1;
 
-   int pullShift = 1;
-   int dirPull   = CandleDir(pullShift, tf);
-   if(dirPull == 0) return false; // skip doji
+    int pullShift = 1;
+    int dirPull = CandleDir(pullShift, tf);
+    if (dirPull == 0)
+        return false; // skip doji
 
-   // === Filter trend dengan EMA200 (timeframe yang sama) ===
-   int emaHandle = iMA(_Symbol, tf, 200, 0, MODE_EMA, PRICE_CLOSE);
-   double emaArray[];
-   ArraySetAsSeries(emaArray, true);
-   CopyBuffer(emaHandle, 0, 0, pullShift + 1, emaArray);
-   
-   double ema200 = emaArray[pullShift];
-   double price  = iClose(_Symbol, tf, pullShift);
-   
-   if(dirPull == 1 && price < ema200) return false; // buy tapi harga < EMA200
-   if(dirPull == -1 && price > ema200) return false; // sell tapi harga > EMA200
+    // === Filter trend dengan EMA200 (timeframe yang sama) ===
+    int emaHandle = iMA(_Symbol, tf, 200, 0, MODE_EMA, PRICE_CLOSE);
+    double emaArray[];
+    ArraySetAsSeries(emaArray, true);
+    CopyBuffer(emaHandle, 0, 0, pullShift + 1, emaArray);
 
-   // === Filter ATR (volatilitas cukup, bukan choppy) ===
-   int atrHandle = iATR(_Symbol, tf, 14);
-   double atrArray[];
-   ArraySetAsSeries(atrArray, true);
-   CopyBuffer(atrHandle, 0, 0, pullShift + 1, atrArray);
-   
-   double atr = atrArray[pullShift];
-   if(atr < PipsToPrice(5)) return false; // minimal ATR 5 pips
+    double ema200 = emaArray[pullShift];
+    double price = iClose(_Symbol, tf, pullShift);
 
-   // === Multi-timeframe konfirmasi trend ===
-   int emaHTFHandle = iMA(_Symbol, MomentumHTF, 200, 0, MODE_EMA, PRICE_CLOSE);
-   double emaHTFArray[], priceHTFArray[];
-   ArraySetAsSeries(emaHTFArray, true);
-   ArraySetAsSeries(priceHTFArray, true);
-   
-   CopyBuffer(emaHTFHandle, 0, 0, 2, emaHTFArray);
-   CopyClose(_Symbol, MomentumHTF, 0, 2, priceHTFArray);
-   
-   double emaHTF = emaHTFArray[1];
-   double priceHTF = priceHTFArray[1];
-   
-   if(dirPull == 1 && priceHTF < emaHTF) return false;
-   if(dirPull == -1 && priceHTF > emaHTF) return false;
+    if (dirPull == 1 && price < ema200)
+        return false; // buy tapi harga < EMA200
+    if (dirPull == -1 && price > ema200)
+        return false; // sell tapi harga > EMA200
 
-   // Cari panjang momentum L
-   int maxPossibleL = MathMin(lookbackBars - 1, 20);
-   for(int L = maxPossibleL; L >= MomentumCfg::minConsecutive; L--)
-   {
-      int start    = 2;
-      int end      = L + 1;
-      int firstDir = CandleDir(start, tf);
-      if(firstDir == 0) continue;
+    // === Filter ATR (volatilitas cukup, bukan choppy) ===
+    int atrHandle = iATR(_Symbol, tf, 14);
+    double atrArray[];
+    ArraySetAsSeries(atrArray, true);
+    CopyBuffer(atrHandle, 0, 0, pullShift + 1, atrArray);
 
-      bool okSeq = true;
-      for(int s = start + 1; s <= end; s++)
-      {
-         if(CandleDir(s, tf) != firstDir) { okSeq = false; break; }
-      }
-      if(!okSeq) continue;
+    double atr = atrArray[pullShift];
+    if (atr < PipsToPrice(5))
+        return false; // minimal ATR 5 pips
 
-      // momentum vs pullback harus berlawanan
-      if(dirPull == firstDir) continue;
+    // === Multi-timeframe konfirmasi trend ===
+    int emaHTFHandle = iMA(_Symbol, MomentumHTF, 200, 0, MODE_EMA, PRICE_CLOSE);
+    double emaHTFArray[], priceHTFArray[];
+    ArraySetAsSeries(emaHTFArray, true);
+    ArraySetAsSeries(priceHTFArray, true);
 
-      // body pullback > multiplier * body momentum awal
-      double bodyPull = CandleBody(pullShift, tf);
-      double bodyPrev = CandleBody(2, tf);
-      if(bodyPrev <= 0) bodyPrev = _Point;
-      if(bodyPull < MomentumCfg::minBodyMultiplier * bodyPrev) continue;
+    CopyBuffer(emaHTFHandle, 0, 0, 2, emaHTFArray);
+    CopyClose(_Symbol, MomentumHTF, 0, 2, priceHTFArray);
 
-      // filter engulfing / pinbar opsional
-      if(MomentumCfg::useEngulfingFilter && !IsEngulfing(pullShift, tf)) continue;
-      if(MomentumCfg::usePinbarFilter && !IsPinbar(pullShift, tf)) continue;
+    double emaHTF = emaHTFArray[1];
+    double priceHTF = priceHTFArray[1];
 
-      // konfirmasi candle jika diaktifkan
-      if(MomentumCfg::confirmationCandles > 0)
-      {
-         bool confOk = true;
-         for(int c = 0; c < MomentumCfg::confirmationCandles; c++)
-         {
-            if(CandleDir(c, tf) != dirPull) { confOk = false; break; }
-         }
-         if(!confOk) continue;
-      }
+    if (dirPull == 1 && priceHTF < emaHTF)
+        return false;
+    if (dirPull == -1 && priceHTF > emaHTF)
+        return false;
 
-      // === jika lolos semua: buat sinyal ===
-      outSignal.found      = true;
-      outSignal.time       = iTime(_Symbol, tf, pullShift);
-      outSignal.dir        = (Dir)dirPull;
-      outSignal.entryPrice = (dirPull == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
-                                           : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    // Cari panjang momentum L
+    int maxPossibleL = MathMin(lookbackBars - 1, 20);
+    for (int L = maxPossibleL; L >= MomentumCfg::minConsecutive; L--)
+    {
+        int start = 2;
+        int end = L + 1;
+        int firstDir = CandleDir(start, tf);
+        if (firstDir == 0)
+            continue;
 
-      double slP = MomentumCfg::slPipsDefault;
-      double tpP = MomentumCfg::tpPipsDefault;
-      outSignal.stopLoss   = outSignal.entryPrice - dirPull * PipsToPrice(slP);
-      outSignal.takeProfit = outSignal.entryPrice + dirPull * PipsToPrice(tpP);
+        bool okSeq = true;
+        for (int s = start + 1; s <= end; s++)
+        {
+            if (CandleDir(s, tf) != firstDir)
+            {
+                okSeq = false;
+                break;
+            }
+        }
+        if (!okSeq)
+            continue;
 
-      outSignal.lot        = CalculateLotFromRisk(outSignal.stopLoss, outSignal.entryPrice);
-      outSignal.lot        = MathMin(outSignal.lot, MomentumCfg::maxLotPerTrade);
+        // momentum vs pullback harus berlawanan
+        if (dirPull == firstDir)
+            continue;
 
-      outSignal.reason     = StringFormat("EMA200 trend + Momentum L=%d pullback idx=%d", L, pullShift);
-      return true;
-   }
+        // body pullback > multiplier * body momentum awal
+        double bodyPull = CandleBody(pullShift, tf);
+        double bodyPrev = CandleBody(2, tf);
+        if (bodyPrev <= 0)
+            bodyPrev = _Point;
+        if (bodyPull < MomentumCfg::minBodyMultiplier * bodyPrev)
+            continue;
 
-   return false;
+        // filter engulfing / pinbar opsional
+        if (MomentumCfg::useEngulfingFilter && !IsEngulfing(pullShift, tf))
+            continue;
+        if (MomentumCfg::usePinbarFilter && !IsPinbar(pullShift, tf))
+            continue;
+
+        // konfirmasi candle jika diaktifkan
+        if (MomentumCfg::confirmationCandles > 0)
+        {
+            bool confOk = true;
+            for (int c = 0; c < MomentumCfg::confirmationCandles; c++)
+            {
+                if (CandleDir(c, tf) != dirPull)
+                {
+                    confOk = false;
+                    break;
+                }
+            }
+            if (!confOk)
+                continue;
+        }
+
+        // === jika lolos semua: buat sinyal ===
+        outSignal.found = true;
+        outSignal.time = iTime(_Symbol, tf, pullShift);
+        outSignal.dir = (Dir)dirPull;
+        outSignal.entryPrice = (dirPull == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                                              : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+        double slP = MomentumCfg::slPipsDefault;
+        double tpP = MomentumCfg::tpPipsDefault;
+        outSignal.stopLoss = outSignal.entryPrice - dirPull * PipsToPrice(slP);
+        outSignal.takeProfit = outSignal.entryPrice + dirPull * PipsToPrice(tpP);
+
+        outSignal.lot = CalculateLotFromRisk(outSignal.stopLoss, outSignal.entryPrice);
+        outSignal.lot = MathMin(outSignal.lot, MomentumCfg::maxLotPerTrade);
+
+        outSignal.reason = StringFormat("EMA200 trend + Momentum L=%d pullback idx=%d", L, pullShift);
+        return true;
+    }
+
+    return false;
 }
 
 //+------------------------------------------------------------------+
@@ -2526,12 +3047,12 @@ struct NISignal
 //+------------------------------------------------------------------+
 //| News Impact Parameters                                          |
 //+------------------------------------------------------------------+
-input bool UseNewsImpact = true;                       // Aktifkan news impact detection
-input double NewsLotMin = 0.01;                        // Lot minimal untuk news
-input double NewsMinCandlePct = 0.5;                   // Minimal % body candle
-input int NewsTrailPoints = 10;                        // Trailing stop points
-input int NewsEMAPeriod = 200;                         // EMA period untuk filter
-input int NewsATRPeriod = 14;                          // ATR period untuk volatilitas
+input bool UseNewsImpact = true;     // Aktifkan news impact detection
+input double NewsLotMin = 0.01;      // Lot minimal untuk news
+input double NewsMinCandlePct = 0.5; // Minimal % body candle
+input int NewsTrailPoints = 10;      // Trailing stop points
+input int NewsEMAPeriod = 200;       // EMA period untuk filter
+input int NewsATRPeriod = 14;        // ATR period untuk volatilitas
 
 //==================================================================
 // Fungsi: DetectAndExecuteMultiTFNews
@@ -2542,7 +3063,7 @@ input int NewsATRPeriod = 14;                          // ATR period untuk volat
 //   - ATR filter untuk konfirmasi volatilitas
 //   - Lot dinamis, SL/TP otomatis, trailing stop
 //==================================================================
-NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5, int trailPoints=10, int emaPeriod=200, int atrPeriod=14)
+NISignal DetectAndExecuteMultiTFNews(double lotMin = 0.01, double minCandlePct = 0.5, int trailPoints = 10, int emaPeriod = 200, int atrPeriod = 14)
 {
     NISignal sig;
     sig.signal = DIR_NONE;
@@ -2559,23 +3080,24 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     // Ambil news high-impact live
     // -------------------------
     datetime currentTime = TimeCurrent();
-    datetime newsTime = 0;  // INISIALISASI
-    string newsName = "";   // INISIALISASI
-    int eventImpact = 0;    // INISIALISASI
+    datetime newsTime = 0; // INISIALISASI
+    string newsName = "";  // INISIALISASI
+    int eventImpact = 0;   // INISIALISASI
     bool newsFound = false;
-    
-    for(int i = 0; i < CalendarEventsTotal(); i++)
+
+    for (int i = 0; i < CalendarEventsTotal(); i++)
     {
-        if(CalendarEventByIndex(i, newsTime, newsName, eventImpact))
+        if (CalendarEventByIndex(i, newsTime, newsName, eventImpact))
         {
-            if(eventImpact == 3 && newsTime >= currentTime && newsTime <= currentTime + 60)
+            if (eventImpact == 3 && newsTime >= currentTime && newsTime <= currentTime + 60)
             {
                 newsFound = true;
                 break;
             }
         }
     }
-    if(!newsFound) return sig;
+    if (!newsFound)
+        return sig;
 
     // -------------------------
     // Multi-timeframe ratio
@@ -2585,7 +3107,8 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     double rM15 = GetBodyAndAvg(PERIOD_M15);
 
     // Minimal candle ratio terpenuhi di semua TF
-    if(rM1 < minCandlePct || rM5 < minCandlePct || rM15 < minCandlePct) return sig;
+    if (rM1 < minCandlePct || rM5 < minCandlePct || rM15 < minCandlePct)
+        return sig;
 
     // -------------------------
     // Filter trend EMA untuk M1
@@ -2594,7 +3117,7 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     double emaArray[];
     ArraySetAsSeries(emaArray, true);
     CopyBuffer(emaHandle, 0, 0, 2, emaArray);
-    
+
     double ema = emaArray[0];
     double prevEma = emaArray[1];
     bool trendUp = (ema > prevEma);
@@ -2616,28 +3139,30 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     double atrArray[];
     ArraySetAsSeries(atrArray, true);
     CopyBuffer(atrHandle, 0, 0, 1, atrArray);
-    
+
     double atr = atrArray[0];
-    if(body < atr * 0.8) return sig; // body terlalu kecil → skip
+    if (body < atr * 0.8)
+        return sig; // body terlalu kecil → skip
 
     // -------------------------
     // Tentukan arah sinyal
     // -------------------------
-    if(cl > op && trendUp)
+    if (cl > op && trendUp)
     {
         sig.signal = DIR_BUY;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
         sig.stopLoss = lo - _Point * 5;
         sig.takeProfit = cl + body * 2;
     }
-    else if(cl < op && trendDown)
+    else if (cl < op && trendDown)
     {
         sig.signal = DIR_SELL;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         sig.stopLoss = hi + _Point * 5;
         sig.takeProfit = cl - body * 2;
     }
-    else return sig;
+    else
+        return sig;
 
     // -------------------------
     // Set atribut sinyal
@@ -2654,7 +3179,7 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     MqlTradeRequest request;
     MqlTradeResult result;
     ZeroMemory(request);
-    
+
     request.action = TRADE_ACTION_DEAL;
     request.symbol = _Symbol;
     request.volume = sig.lotSize;
@@ -2665,11 +3190,11 @@ NISignal DetectAndExecuteMultiTFNews(double lotMin=0.01, double minCandlePct=0.5
     request.deviation = 10;
     request.magic = MagicNumber;
     request.comment = "NewsImpact";
-    
-    if(OrderSend(request, result))
+
+    if (OrderSend(request, result))
     {
         Print("News Impact Order Executed: Ticket ", result.order);
-        
+
         // Trailing stop akan dihandle oleh ManageTrailingBreakCloseUltimate yang sudah ada
     }
     else
@@ -2687,25 +3212,26 @@ double GetBodyAndAvg(ENUM_TIMEFRAMES tf)
 {
     double body = MathAbs(iClose(_Symbol, tf, 0) - iOpen(_Symbol, tf, 0));
     double avg = 0;
-    for(int j = 1; j <= 10; j++) 
+    for (int j = 1; j <= 10; j++)
         avg += MathAbs(iClose(_Symbol, tf, j) - iOpen(_Symbol, tf, j));
     avg /= 10.0;
-    if(avg == 0) return 0;
+    if (avg == 0)
+        return 0;
     return body / avg; // rasio body dibanding rata-rata
 }
 
 //+------------------------------------------------------------------+
 //| Order Block Parameters                                          |
 //+------------------------------------------------------------------+
-input bool UseOrderBlock = true;                       // Aktifkan order block detection
-input ENUM_TIMEFRAMES OB_TF1 = PERIOD_M15;              // Timeframe 1 untuk OB
-input ENUM_TIMEFRAMES OB_TF2 = PERIOD_H1;              // Timeframe 2 untuk trend filter
-input double OB_BaseLot = 0.01;                        // Lot dasar untuk OB
-input int OB_EMAPeriod1 = 50;                          // EMA period untuk TF1
-input int OB_EMAPeriod2 = 50;                          // EMA period untuk TF2
-input int OB_Levels = 3;                               // Jumlah level OB
-input double OB_ZoneBufferPips = 50;                   // Buffer zona dalam pips
-input int OB_Lookback = 20;                            // Lookback candles untuk OB
+input bool UseOrderBlock = true;           // Aktifkan order block detection
+input ENUM_TIMEFRAMES OB_TF1 = PERIOD_H1; // Timeframe 1 untuk OB
+input ENUM_TIMEFRAMES OB_TF2 = PERIOD_H4;  // Timeframe 2 untuk trend filter
+input double OB_BaseLot = 1.0;            // Lot dasar untuk OB
+input int OB_EMAPeriod1 = 50;              // EMA period untuk TF1
+input int OB_EMAPeriod2 = 50;              // EMA period untuk TF2
+input int OB_Levels = 3;                   // Jumlah level OB
+input double OB_ZoneBufferPips = 50;       // Buffer zona dalam pips
+input int OB_Lookback = 20;                // Lookback candles untuk OB
 
 //==================================================================
 // Helper Function: Get Trend Direction dari EMA
@@ -2716,19 +3242,21 @@ Dir GetTrendEMA(ENUM_TIMEFRAMES tf, int emaPeriod)
     double emaArray[];
     ArraySetAsSeries(emaArray, true);
     CopyBuffer(emaHandle, 0, 0, 2, emaArray);
-    
+
     double emaCurrent = emaArray[0];
     double emaPrev = emaArray[1];
-    
-    if(emaCurrent > emaPrev) return DIR_BUY;
-    if(emaCurrent < emaPrev) return DIR_SELL;
+
+    if (emaCurrent > emaPrev)
+        return DIR_BUY;
+    if (emaCurrent < emaPrev)
+        return DIR_SELL;
     return DIR_NONE;
 }
 
 //==================================================================
 // Fungsi deteksi OB multi-level + scaling lot (Probabilitas ~80%+)
 //==================================================================
-OBSignal DetectOrderBlockPro(double baseLot=0.01, int emaM1=50, int emaM5=50, int levels=3, double zoneBufferPips=10, int lookback=20)
+OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 50, int levels = 3, double zoneBufferPips = 10, int lookback = 20)
 {
     OBSignal sig;
     sig.signal = DIR_NONE;
@@ -2742,12 +3270,20 @@ OBSignal DetectOrderBlockPro(double baseLot=0.01, int emaM1=50, int emaM5=50, in
     int idxHi = -1, idxLo = -1;
 
     // Cari High & Low lookback candle terakhir di TF1
-    for(int i = 1; i <= lookback; i++)
+    for (int i = 1; i <= lookback; i++)
     {
         double hi = iHigh(_Symbol, OB_TF1, i);
         double lo = iLow(_Symbol, OB_TF1, i);
-        if(hi > hiMax) { hiMax = hi; idxHi = i; }
-        if(lo < loMin || loMin == 0) { loMin = lo; idxLo = i; }
+        if (hi > hiMax)
+        {
+            hiMax = hi;
+            idxHi = i;
+        }
+        if (lo < loMin || loMin == 0)
+        {
+            loMin = lo;
+            idxLo = i;
+        }
     }
 
     double supply = hiMax;
@@ -2761,53 +3297,52 @@ OBSignal DetectOrderBlockPro(double baseLot=0.01, int emaM1=50, int emaM5=50, in
     double price = iClose(_Symbol, OB_TF1, 0);
 
     // Validasi zona OB
-    if(supply <= demand || supply == 0 || demand == 0) 
+    if (supply <= demand || supply == 0 || demand == 0)
         return sig;
 
     // Tentukan multi-level zona OB
     double levelStep = (supply - demand) / levels;
 
     //==== BUY Multi-level OB ====
-    if(trendTF1 == DIR_BUY && trendTF2 == DIR_BUY)
+    if (trendTF1 == DIR_BUY && trendTF2 == DIR_BUY)
     {
-        for(int lvl = 1; lvl <= levels; lvl++)
+        for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = demand + lvl * levelStep;
-            if(price <= levelPrice + spread && price >= levelPrice - spread)
+            if (price <= levelPrice + spread && price >= levelPrice - spread)
             {
                 sig.signal = DIR_BUY;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
                 sig.stopLoss = demand - _Point * 5;
-                sig.takeProfit = supply;  // full zona OB
+                sig.takeProfit = supply;     // full zona OB
                 sig.lotSize = baseLot * lvl; // scaling lot sesuai level
-                sig.isStrong = (lvl == 1); // strongest di level 1
-                break; // ambil level pertama yang valid
+                sig.isStrong = (lvl == 1);   // strongest di level 1
+                break;                       // ambil level pertama yang valid
             }
         }
     }
 
     //==== SELL Multi-level OB ====
-    if(trendTF1 == DIR_SELL && trendTF2 == DIR_SELL)
+    if (trendTF1 == DIR_SELL && trendTF2 == DIR_SELL)
     {
-        for(int lvl = 1; lvl <= levels; lvl++)
+        for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = supply - lvl * levelStep;
-            if(price >= levelPrice - spread && price <= levelPrice + spread)
+            if (price >= levelPrice - spread && price <= levelPrice + spread)
             {
                 sig.signal = DIR_SELL;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
                 sig.stopLoss = supply + _Point * 5;
-                sig.takeProfit = demand;  // full zona OB
+                sig.takeProfit = demand;     // full zona OB
                 sig.lotSize = baseLot * lvl; // scaling lot sesuai level
-                sig.isStrong = (lvl == 1); // strongest di level 1
-                break; // ambil level pertama yang valid
+                sig.isStrong = (lvl == 1);   // strongest di level 1
+                break;                       // ambil level pertama yang valid
             }
         }
     }
 
     return sig;
 }
-
 
 //+------------------------------------------------------------------+
 //| Candle Structure POLA N PRO                                      |
@@ -2826,27 +3361,27 @@ struct Candle
 //+------------------------------------------------------------------+
 struct MultiEntryInfo
 {
-   double entry1;
-   double entry2;
-   double entry3;
-   double stopLoss;
-   double takeProfit1;
-   double takeProfit2;
-   double takeProfit3;
-   double riskReward1;
-   double riskReward2;
-   double riskReward3;
+    double entry1;
+    double entry2;
+    double entry3;
+    double stopLoss;
+    double takeProfit1;
+    double takeProfit2;
+    double takeProfit3;
+    double riskReward1;
+    double riskReward2;
+    double riskReward3;
 };
 
 //+------------------------------------------------------------------+
 //| Candlestick Pattern Parameters                                  |
 //+------------------------------------------------------------------+
-input bool UseCandlePattern = true;                    // Aktifkan candlestick pattern detection
-input ENUM_TIMEFRAMES Candle_TF = PERIOD_M15;          // Timeframe untuk pattern detection
-input int Candle_EMAPeriod = 50;                       // EMA period untuk trend filter
-input double Candle_MinBodyRatio = 0.3;                // Minimal body ratio untuk validasi
-input double Candle_RiskReward = 2.0;                  // Risk reward ratio default
-input bool Candle_MultiEntry = true;                   // Aktifkan multi-level entry
+input bool UseCandlePattern = true;           // Aktifkan candlestick pattern detection
+input ENUM_TIMEFRAMES Candle_TF = PERIOD_M15; // Timeframe untuk pattern detection
+input int Candle_EMAPeriod = 50;              // EMA period untuk trend filter
+input double Candle_MinBodyRatio = 0.3;       // Minimal body ratio untuk validasi
+input double Candle_RiskReward = 2.0;         // Risk reward ratio default
+input bool Candle_MultiEntry = true;          // Aktifkan multi-level entry
 
 //==================================================================
 // Helper Function: Get Candle Data
@@ -2865,160 +3400,160 @@ Candle GetCandle(string symbol, ENUM_TIMEFRAMES tf, int shift)
 //==================================================================
 // Fungsi deteksi candlestick canggih + multi-level entry + trailing
 //==================================================================
-Dir DetectPatternPro(string symbol, ENUM_TIMEFRAMES tf, int shift, MultiEntryInfo &me, int emaPeriod=50)
+Dir DetectPatternPro(string symbol, ENUM_TIMEFRAMES tf, int shift, MultiEntryInfo &me, int emaPeriod = 50)
 {
-   Candle c1 = GetCandle(symbol, tf, shift+2);
-   Candle c2 = GetCandle(symbol, tf, shift+1);
-   Candle c3 = GetCandle(symbol, tf, shift);
+    Candle c1 = GetCandle(symbol, tf, shift + 2);
+    Candle c2 = GetCandle(symbol, tf, shift + 1);
+    Candle c3 = GetCandle(symbol, tf, shift);
 
-   // Get EMA data
-   int emaHandle = iMA(symbol, tf, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
-   double emaArray[];
-   ArraySetAsSeries(emaArray, true);
-   CopyBuffer(emaHandle, 0, 0, shift+1, emaArray);
-   double ema = emaArray[shift];
+    // Get EMA data
+    int emaHandle = iMA(symbol, tf, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    double emaArray[];
+    ArraySetAsSeries(emaArray, true);
+    CopyBuffer(emaHandle, 0, 0, shift + 1, emaArray);
+    double ema = emaArray[shift];
 
-   // Body rata-rata 3 candle terakhir
-   double avgBody = (MathAbs(c1.close-c1.open) + MathAbs(c2.close-c2.open) + MathAbs(c3.close-c3.open))/3.0;
+    // Body rata-rata 3 candle terakhir
+    double avgBody = (MathAbs(c1.close - c1.open) + MathAbs(c2.close - c2.open) + MathAbs(c3.close - c3.open)) / 3.0;
 
-   // Inisialisasi MultiEntryInfo
-   me.entry1 = me.entry2 = me.entry3 = 0;
-   me.takeProfit1 = me.takeProfit2 = me.takeProfit3 = 0;
-   me.stopLoss = 0;
-   me.riskReward1 = me.riskReward2 = me.riskReward3 = 0;
+    // Inisialisasi MultiEntryInfo
+    me.entry1 = me.entry2 = me.entry3 = 0;
+    me.takeProfit1 = me.takeProfit2 = me.takeProfit3 = 0;
+    me.stopLoss = 0;
+    me.riskReward1 = me.riskReward2 = me.riskReward3 = 0;
 
-   Dir signal = DIR_NONE;
+    Dir signal = DIR_NONE;
 
-   // --- Engulfing bullish ---
-   if(c2.close < c2.open && c3.close > c3.open && 
-      c3.close > c2.open && c3.open < c2.close && 
-      c3.close > ema && MathAbs(c3.close-c3.open) > avgBody)
-   {
-      double risk = c3.close - c2.low;
-      if(risk > 0)
-      {
-         me.entry1 = c3.close;
-         me.stopLoss = c2.low;
-         me.takeProfit1 = me.entry1 + risk * Candle_RiskReward;
-         
-         if(Candle_MultiEntry)
-         {
-            me.entry2 = me.entry1 + risk * 0.5;  // scaling 2
-            me.takeProfit2 = me.entry2 + risk * Candle_RiskReward;
-            me.entry3 = me.entry1 + risk * 1.0;  // scaling 3
-            me.takeProfit3 = me.entry3 + risk * Candle_RiskReward;
-         }
-         else
-         {
-            me.entry2 = me.entry1;
-            me.takeProfit2 = me.takeProfit1;
-            me.entry3 = me.entry1;
-            me.takeProfit3 = me.takeProfit1;
-         }
+    // --- Engulfing bullish ---
+    if (c2.close < c2.open && c3.close > c3.open &&
+        c3.close > c2.open && c3.open < c2.close &&
+        c3.close > ema && MathAbs(c3.close - c3.open) > avgBody)
+    {
+        double risk = c3.close - c2.low;
+        if (risk > 0)
+        {
+            me.entry1 = c3.close;
+            me.stopLoss = c2.low;
+            me.takeProfit1 = me.entry1 + risk * Candle_RiskReward;
 
-         me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
-         return DIR_BUY;
-      }
-   }
+            if (Candle_MultiEntry)
+            {
+                me.entry2 = me.entry1 + risk * 0.5; // scaling 2
+                me.takeProfit2 = me.entry2 + risk * Candle_RiskReward;
+                me.entry3 = me.entry1 + risk * 1.0; // scaling 3
+                me.takeProfit3 = me.entry3 + risk * Candle_RiskReward;
+            }
+            else
+            {
+                me.entry2 = me.entry1;
+                me.takeProfit2 = me.takeProfit1;
+                me.entry3 = me.entry1;
+                me.takeProfit3 = me.takeProfit1;
+            }
 
-   // --- Engulfing bearish ---
-   if(c2.close > c2.open && c3.close < c3.open && 
-      c3.close < c2.open && c3.open > c2.close && 
-      c3.close < ema && MathAbs(c3.close-c3.open) > avgBody)
-   {
-      double risk = c2.high - c3.close;
-      if(risk > 0)
-      {
-         me.entry1 = c3.close;
-         me.stopLoss = c2.high;
-         me.takeProfit1 = me.entry1 - risk * Candle_RiskReward;
-         
-         if(Candle_MultiEntry)
-         {
-            me.entry2 = me.entry1 - risk * 0.5;
-            me.takeProfit2 = me.entry2 - risk * Candle_RiskReward;
-            me.entry3 = me.entry1 - risk * 1.0;
-            me.takeProfit3 = me.entry3 - risk * Candle_RiskReward;
-         }
-         else
-         {
-            me.entry2 = me.entry1;
-            me.takeProfit2 = me.takeProfit1;
-            me.entry3 = me.entry1;
-            me.takeProfit3 = me.takeProfit1;
-         }
+            me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
+            return DIR_BUY;
+        }
+    }
 
-         me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
-         return DIR_SELL;
-      }
-   }
+    // --- Engulfing bearish ---
+    if (c2.close > c2.open && c3.close < c3.open &&
+        c3.close < c2.open && c3.open > c2.close &&
+        c3.close < ema && MathAbs(c3.close - c3.open) > avgBody)
+    {
+        double risk = c2.high - c3.close;
+        if (risk > 0)
+        {
+            me.entry1 = c3.close;
+            me.stopLoss = c2.high;
+            me.takeProfit1 = me.entry1 - risk * Candle_RiskReward;
 
-   // --- Pin Bar / Hammer bullish ---
-   double body = MathAbs(c3.close - c3.open);
-   double upperWick = c3.high - MathMax(c3.close, c3.open);
-   double lowerWick = MathMin(c3.close, c3.open) - c3.low;
-   double range = c3.high - c3.low;
+            if (Candle_MultiEntry)
+            {
+                me.entry2 = me.entry1 - risk * 0.5;
+                me.takeProfit2 = me.entry2 - risk * Candle_RiskReward;
+                me.entry3 = me.entry1 - risk * 1.0;
+                me.takeProfit3 = me.entry3 - risk * Candle_RiskReward;
+            }
+            else
+            {
+                me.entry2 = me.entry1;
+                me.takeProfit2 = me.takeProfit1;
+                me.entry3 = me.entry1;
+                me.takeProfit3 = me.takeProfit1;
+            }
 
-   if(range > 0 && lowerWick >= 2*body && body <= Candle_MinBodyRatio*range && c3.close > ema)
-   {
-      double risk = c3.close - c3.low;
-      if(risk > 0)
-      {
-         me.entry1 = c3.close;
-         me.stopLoss = c3.low;
-         me.takeProfit1 = me.entry1 + risk * Candle_RiskReward;
-         
-         if(Candle_MultiEntry)
-         {
-            me.entry2 = me.entry1 + risk * 0.5;
-            me.takeProfit2 = me.entry2 + risk * Candle_RiskReward;
-            me.entry3 = me.entry1 + risk * 1.0;
-            me.takeProfit3 = me.entry3 + risk * Candle_RiskReward;
-         }
-         else
-         {
-            me.entry2 = me.entry1;
-            me.takeProfit2 = me.takeProfit1;
-            me.entry3 = me.entry1;
-            me.takeProfit3 = me.takeProfit1;
-         }
+            me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
+            return DIR_SELL;
+        }
+    }
 
-         me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
-         return DIR_BUY;
-      }
-   }
+    // --- Pin Bar / Hammer bullish ---
+    double body = MathAbs(c3.close - c3.open);
+    double upperWick = c3.high - MathMax(c3.close, c3.open);
+    double lowerWick = MathMin(c3.close, c3.open) - c3.low;
+    double range = c3.high - c3.low;
 
-   // --- Pin Bar / Inverted Hammer bearish ---
-   if(range > 0 && upperWick >= 2*body && body <= Candle_MinBodyRatio*range && c3.close < ema)
-   {
-      double risk = c3.high - c3.close;
-      if(risk > 0)
-      {
-         me.entry1 = c3.close;
-         me.stopLoss = c3.high;
-         me.takeProfit1 = me.entry1 - risk * Candle_RiskReward;
-         
-         if(Candle_MultiEntry)
-         {
-            me.entry2 = me.entry1 - risk * 0.5;
-            me.takeProfit2 = me.entry2 - risk * Candle_RiskReward;
-            me.entry3 = me.entry1 - risk * 1.0;
-            me.takeProfit3 = me.entry3 - risk * Candle_RiskReward;
-         }
-         else
-         {
-            me.entry2 = me.entry1;
-            me.takeProfit2 = me.takeProfit1;
-            me.entry3 = me.entry1;
-            me.takeProfit3 = me.takeProfit1;
-         }
+    if (range > 0 && lowerWick >= 2 * body && body <= Candle_MinBodyRatio * range && c3.close > ema)
+    {
+        double risk = c3.close - c3.low;
+        if (risk > 0)
+        {
+            me.entry1 = c3.close;
+            me.stopLoss = c3.low;
+            me.takeProfit1 = me.entry1 + risk * Candle_RiskReward;
 
-         me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
-         return DIR_SELL;
-      }
-   }
+            if (Candle_MultiEntry)
+            {
+                me.entry2 = me.entry1 + risk * 0.5;
+                me.takeProfit2 = me.entry2 + risk * Candle_RiskReward;
+                me.entry3 = me.entry1 + risk * 1.0;
+                me.takeProfit3 = me.entry3 + risk * Candle_RiskReward;
+            }
+            else
+            {
+                me.entry2 = me.entry1;
+                me.takeProfit2 = me.takeProfit1;
+                me.entry3 = me.entry1;
+                me.takeProfit3 = me.takeProfit1;
+            }
 
-   return DIR_NONE;
+            me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
+            return DIR_BUY;
+        }
+    }
+
+    // --- Pin Bar / Inverted Hammer bearish ---
+    if (range > 0 && upperWick >= 2 * body && body <= Candle_MinBodyRatio * range && c3.close < ema)
+    {
+        double risk = c3.high - c3.close;
+        if (risk > 0)
+        {
+            me.entry1 = c3.close;
+            me.stopLoss = c3.high;
+            me.takeProfit1 = me.entry1 - risk * Candle_RiskReward;
+
+            if (Candle_MultiEntry)
+            {
+                me.entry2 = me.entry1 - risk * 0.5;
+                me.takeProfit2 = me.entry2 - risk * Candle_RiskReward;
+                me.entry3 = me.entry1 - risk * 1.0;
+                me.takeProfit3 = me.entry3 - risk * Candle_RiskReward;
+            }
+            else
+            {
+                me.entry2 = me.entry1;
+                me.takeProfit2 = me.takeProfit1;
+                me.entry3 = me.entry1;
+                me.takeProfit3 = me.takeProfit1;
+            }
+
+            me.riskReward1 = me.riskReward2 = me.riskReward3 = Candle_RiskReward;
+            return DIR_SELL;
+        }
+    }
+
+    return DIR_NONE;
 }
 
 //==================================================================
@@ -3026,38 +3561,39 @@ Dir DetectPatternPro(string symbol, ENUM_TIMEFRAMES tf, int shift, MultiEntryInf
 //==================================================================
 void ExecuteMultiEntryTrade(Dir direction, MultiEntryInfo &me, double baseLot)
 {
-    if(direction == DIR_NONE) return;
-    
+    if (direction == DIR_NONE)
+        return;
+
     double lot1 = baseLot;
     double lot2 = baseLot * 0.7; // Smaller lot untuk entry berikutnya
     double lot3 = baseLot * 0.5; // Even smaller lot
-    
+
     // Entry 1 - Immediate
-    if(direction == DIR_BUY)
+    if (direction == DIR_BUY)
     {
-        ExecuteBuy(lot1, (int)((me.entry1 - me.stopLoss) / _Point / 10), 
-                  (int)((me.takeProfit1 - me.entry1) / _Point / 10));
+        ExecuteBuy(lot1, (int)((me.entry1 - me.stopLoss) / _Point / 10),
+                   (int)((me.takeProfit1 - me.entry1) / _Point / 10));
     }
     else
     {
-        ExecuteSell(lot1, (int)((me.stopLoss - me.entry1) / _Point / 10), 
-                   (int)((me.entry1 - me.takeProfit1) / _Point / 10));
+        ExecuteSell(lot1, (int)((me.stopLoss - me.entry1) / _Point / 10),
+                    (int)((me.entry1 - me.takeProfit1) / _Point / 10));
     }
-    
+
     // Entry 2 & 3 akan dihandle oleh pending orders (jika multi-entry aktif)
-    if(Candle_MultiEntry)
+    if (Candle_MultiEntry)
     {
         // Untuk simplicity, kita eksekusi langsung dengan smaller lots
         // Dalam implementasi real, bisa menggunakan pending orders
-        if(direction == DIR_BUY && me.entry2 > 0)
+        if (direction == DIR_BUY && me.entry2 > 0)
         {
-            ExecuteBuy(lot2, (int)((me.entry2 - me.stopLoss) / _Point / 10), 
-                      (int)((me.takeProfit2 - me.entry2) / _Point / 10));
+            ExecuteBuy(lot2, (int)((me.entry2 - me.stopLoss) / _Point / 10),
+                       (int)((me.takeProfit2 - me.entry2) / _Point / 10));
         }
-        else if(direction == DIR_SELL && me.entry2 > 0)
+        else if (direction == DIR_SELL && me.entry2 > 0)
         {
-            ExecuteSell(lot2, (int)((me.stopLoss - me.entry2) / _Point / 10), 
-                       (int)((me.entry2 - me.takeProfit2) / _Point / 10));
+            ExecuteSell(lot2, (int)((me.stopLoss - me.entry2) / _Point / 10),
+                        (int)((me.entry2 - me.takeProfit2) / _Point / 10));
         }
     }
 }
@@ -3078,20 +3614,20 @@ struct SCMSignal
 //+------------------------------------------------------------------+
 //| SCM (Smart Convergence Momentum) Parameters                     |
 //+------------------------------------------------------------------+
-input bool UseSCMSignal = true;                        // Aktifkan SCM signal detection
-input ENUM_TIMEFRAMES SCM_TF1 = PERIOD_M1;             // Timeframe 1 untuk SCM
-input ENUM_TIMEFRAMES SCM_TF2 = PERIOD_M5;             // Timeframe 2 untuk SCM  
-input ENUM_TIMEFRAMES SCM_TF3 = PERIOD_M15;            // Timeframe 3 untuk SCM
-input double SCM_BaseLot = 0.01;                       // Lot dasar untuk SCM
-input int SCM_EMAPeriod = 50;                          // EMA period untuk trend
-input int SCM_RSIPeriod = 14;                          // RSI period
-input double SCM_RSI_OB = 70;                          // RSI overbought level
-input double SCM_RSI_OS = 30;                          // RSI oversold level
-input int SCM_MACD_Fast = 12;                          // MACD fast period
-input int SCM_MACD_Slow = 26;                          // MACD slow period
-input int SCM_MACD_Signal = 9;                         // MACD signal period
-input int SCM_ATRPeriod = 14;                          // ATR period
-input double SCM_ATRMultiplier = 1.5;                  // ATR multiplier untuk SL
+input bool UseSCMSignal = true;             // Aktifkan SCM signal detection
+input ENUM_TIMEFRAMES SCM_TF1 = PERIOD_M1;  // Timeframe 1 untuk SCM
+input ENUM_TIMEFRAMES SCM_TF2 = PERIOD_M5;  // Timeframe 2 untuk SCM
+input ENUM_TIMEFRAMES SCM_TF3 = PERIOD_M15; // Timeframe 3 untuk SCM
+input double SCM_BaseLot = 0.01;            // Lot dasar untuk SCM
+input int SCM_EMAPeriod = 50;               // EMA period untuk trend
+input int SCM_RSIPeriod = 14;               // RSI period
+input double SCM_RSI_OB = 70;               // RSI overbought level
+input double SCM_RSI_OS = 30;               // RSI oversold level
+input int SCM_MACD_Fast = 12;               // MACD fast period
+input int SCM_MACD_Slow = 26;               // MACD slow period
+input int SCM_MACD_Signal = 9;              // MACD signal period
+input int SCM_ATRPeriod = 14;               // ATR period
+input double SCM_ATRMultiplier = 1.5;       // ATR multiplier untuk SL
 
 //==================================================================
 // Helper Function: Get EMA Trend Direction
@@ -3102,15 +3638,17 @@ Dir GetEMAtrend(ENUM_TIMEFRAMES tf, int emaPeriod)
     double emaArray[], priceArray[];
     ArraySetAsSeries(emaArray, true);
     ArraySetAsSeries(priceArray, true);
-    
+
     CopyBuffer(emaHandle, 0, 0, 2, emaArray);
     CopyClose(_Symbol, tf, 0, 2, priceArray);
-    
+
     double emaCurrent = emaArray[0];
     double priceCurrent = priceArray[0];
-    
-    if(priceCurrent > emaCurrent) return DIR_BUY;
-    if(priceCurrent < emaCurrent) return DIR_SELL;
+
+    if (priceCurrent > emaCurrent)
+        return DIR_BUY;
+    if (priceCurrent < emaCurrent)
+        return DIR_SELL;
     return DIR_NONE;
 }
 
@@ -3118,16 +3656,16 @@ Dir GetEMAtrend(ENUM_TIMEFRAMES tf, int emaPeriod)
 // Fungsi: DetectSCMSignalHighProb
 // Deskripsi: Smart Convergence Momentum dengan multi-timeframe confirmation
 //==================================================================
-SCMSignal DetectSCMSignalHighProb(double lotMin=0.01,
-                                  int emaPeriod=50,
-                                  int rsiPeriod=14,
-                                  double rsiOB=70,
-                                  double rsiOS=30,
-                                  int macdFast=12,
-                                  int macdSlow=26,
-                                  int macdSignal=9,
-                                  int atrPeriod=14,
-                                  double atrMultiplier=1.5)
+SCMSignal DetectSCMSignalHighProb(double lotMin = 0.01,
+                                  int emaPeriod = 50,
+                                  int rsiPeriod = 14,
+                                  double rsiOB = 70,
+                                  double rsiOS = 30,
+                                  int macdFast = 12,
+                                  int macdSlow = 26,
+                                  int macdSignal = 9,
+                                  int atrPeriod = 14,
+                                  double atrMultiplier = 1.5)
 {
     SCMSignal sig;
     sig.signal = DIR_NONE;
@@ -3154,10 +3692,10 @@ SCMSignal DetectSCMSignalHighProb(double lotMin=0.01,
     double macdMainArray[], macdSignalArray[];
     ArraySetAsSeries(macdMainArray, true);
     ArraySetAsSeries(macdSignalArray, true);
-    
+
     CopyBuffer(macdHandle, MAIN_LINE, 0, 1, macdMainArray);
     CopyBuffer(macdHandle, SIGNAL_LINE, 0, 1, macdSignalArray);
-    
+
     double macdCurrent = macdMainArray[0];
     double macdSignalLine = macdSignalArray[0];
 
@@ -3174,13 +3712,14 @@ SCMSignal DetectSCMSignalHighProb(double lotMin=0.01,
     double body = MathAbs(closeC - openC);
 
     // Validasi data
-    if(atr <= 0 || rsi <= 0) return sig;
+    if (atr <= 0 || rsi <= 0)
+        return sig;
 
     // --- BUY Condition ---
-    if(trendTF1 == DIR_BUY && trendTF2 == DIR_BUY && trendTF3 == DIR_BUY &&
-       rsi < rsiOS &&
-       macdCurrent > macdSignalLine &&
-       body >= atr * 0.5) // candle cukup kuat
+    if (trendTF1 == DIR_BUY && trendTF2 == DIR_BUY && trendTF3 == DIR_BUY &&
+        rsi < rsiOS &&
+        macdCurrent > macdSignalLine &&
+        body >= atr * 0.5) // candle cukup kuat
     {
         sig.signal = DIR_BUY;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
@@ -3192,10 +3731,10 @@ SCMSignal DetectSCMSignalHighProb(double lotMin=0.01,
     }
 
     // --- SELL Condition ---
-    if(trendTF1 == DIR_SELL && trendTF2 == DIR_SELL && trendTF3 == DIR_SELL &&
-       rsi > rsiOB &&
-       macdCurrent < macdSignalLine &&
-       body >= atr * 0.5) // candle cukup kuat
+    if (trendTF1 == DIR_SELL && trendTF2 == DIR_SELL && trendTF3 == DIR_SELL &&
+        rsi > rsiOB &&
+        macdCurrent < macdSignalLine &&
+        body >= atr * 0.5) // candle cukup kuat
     {
         sig.signal = DIR_SELL;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -3214,35 +3753,35 @@ SCMSignal DetectSCMSignalHighProb(double lotMin=0.01,
 //+------------------------------------------------------------------+
 struct PA_Signal
 {
-    bool found;          // true jika ada sinyal
-    datetime time;       // waktu candle
-    double entryPrice;   // harga entry
-    double stopLoss;     // SL otomatis
-    double takeProfit;   // TP otomatis
-    int lotLevel;        // level scaling lot
-    double  lotSize; 
-    bool longTrade;      // arah trade: true=buy, false=sell
-    Dir direction;       // direction (DIR_BUY/DIR_SELL)
+    bool found;        // true jika ada sinyal
+    datetime time;     // waktu candle
+    double entryPrice; // harga entry
+    double stopLoss;   // SL otomatis
+    double takeProfit; // TP otomatis
+    int lotLevel;      // level scaling lot
+    double lotSize;
+    bool longTrade; // arah trade: true=buy, false=sell
+    Dir direction;  // direction (DIR_BUY/DIR_SELL)
 };
 
 //+------------------------------------------------------------------+
 //| Price Action Parameters                                         |
 //+------------------------------------------------------------------+
-input bool UsePriceAction = true;                      // Aktifkan price action detection
-input ENUM_TIMEFRAMES PA_MainTF = PERIOD_M5;           // Main timeframe untuk trend
-input ENUM_TIMEFRAMES PA_ConfirmTF = PERIOD_M15;       // Confirmation timeframe
-input int PA_EMA_Long = 200;                           // EMA long period untuk trend
-input int PA_EMA_Short = 50;                           // EMA short period untuk konfirmasi
-input double PA_RiskPercent = 1.0;                     // Risiko per trade
-input double PA_RewardRatio = 2.0;                     // Risk:Reward ratio
-input double PA_ATR_Multiplier = 1.5;                  // ATR multiplier untuk SL
-input double PA_TrailFactor = 1.0;                     // Trailing stop factor
+input bool UsePriceAction = true;                // Aktifkan price action detection
+input ENUM_TIMEFRAMES PA_MainTF = PERIOD_M5;     // Main timeframe untuk trend
+input ENUM_TIMEFRAMES PA_ConfirmTF = PERIOD_M15; // Confirmation timeframe
+input int PA_EMA_Long = 200;                     // EMA long period untuk trend
+input int PA_EMA_Short = 50;                     // EMA short period untuk konfirmasi
+input double PA_RiskPercent = 1.0;               // Risiko per trade
+input double PA_RewardRatio = 2.0;               // Risk:Reward ratio
+input double PA_ATR_Multiplier = 1.5;            // ATR multiplier untuk SL
+input double PA_TrailFactor = 1.0;               // Trailing stop factor
 
 //==================================================================
 // Fungsi deteksi Price Action canggih dengan Multi-Timeframe Confirmation
 // High-probability ~90%
 //==================================================================
-PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
+PA_Signal DetectPriceAction_MTF(string symbol, int shift = 1)
 {
     PA_Signal signal;
     signal.found = false;
@@ -3253,32 +3792,32 @@ PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
     // ============================
     int emaLongMain = iMA(symbol, PA_MainTF, PA_EMA_Long, 0, MODE_EMA, PRICE_CLOSE);
     int emaShortMain = iMA(symbol, PA_MainTF, PA_EMA_Short, 0, MODE_EMA, PRICE_CLOSE);
-    
+
     double emaLongMainArray[], emaShortMainArray[], closeMainArray[];
     ArraySetAsSeries(emaLongMainArray, true);
     ArraySetAsSeries(emaShortMainArray, true);
     ArraySetAsSeries(closeMainArray, true);
-    
-    CopyBuffer(emaLongMain, 0, 0, shift+1, emaLongMainArray);
-    CopyBuffer(emaShortMain, 0, 0, shift+1, emaShortMainArray);
-    CopyClose(symbol, PA_MainTF, 0, shift+1, closeMainArray);
-    
+
+    CopyBuffer(emaLongMain, 0, 0, shift + 1, emaLongMainArray);
+    CopyBuffer(emaShortMain, 0, 0, shift + 1, emaShortMainArray);
+    CopyClose(symbol, PA_MainTF, 0, shift + 1, closeMainArray);
+
     double emaLongMainVal = emaLongMainArray[shift];
     double emaShortMainVal = emaShortMainArray[shift];
     double closeMain = closeMainArray[shift];
 
     int emaLongConfirm = iMA(symbol, PA_ConfirmTF, PA_EMA_Long, 0, MODE_EMA, PRICE_CLOSE);
     int emaShortConfirm = iMA(symbol, PA_ConfirmTF, PA_EMA_Short, 0, MODE_EMA, PRICE_CLOSE);
-    
+
     double emaLongConfirmArray[], emaShortConfirmArray[], closeConfirmArray[];
     ArraySetAsSeries(emaLongConfirmArray, true);
     ArraySetAsSeries(emaShortConfirmArray, true);
     ArraySetAsSeries(closeConfirmArray, true);
-    
-    CopyBuffer(emaLongConfirm, 0, 0, shift+1, emaLongConfirmArray);
-    CopyBuffer(emaShortConfirm, 0, 0, shift+1, emaShortConfirmArray);
-    CopyClose(symbol, PA_ConfirmTF, 0, shift+1, closeConfirmArray);
-    
+
+    CopyBuffer(emaLongConfirm, 0, 0, shift + 1, emaLongConfirmArray);
+    CopyBuffer(emaShortConfirm, 0, 0, shift + 1, emaShortConfirmArray);
+    CopyClose(symbol, PA_ConfirmTF, 0, shift + 1, closeConfirmArray);
+
     double emaLongConfirmVal = emaLongConfirmArray[shift];
     double emaShortConfirmVal = emaShortConfirmArray[shift];
     double closeConfirm = closeConfirmArray[shift];
@@ -3292,12 +3831,12 @@ PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
     // ============================
     // 2. Ambil harga candle utama
     // ============================
-    double open  = iOpen(symbol, PA_ConfirmTF, shift);
+    double open = iOpen(symbol, PA_ConfirmTF, shift);
     double close = iClose(symbol, PA_ConfirmTF, shift);
-    double high  = iHigh(symbol, PA_ConfirmTF, shift);
-    double low   = iLow(symbol, PA_ConfirmTF, shift);
-    double prevOpen  = iOpen(symbol, PA_ConfirmTF, shift+1);
-    double prevClose = iClose(symbol, PA_ConfirmTF, shift+1);
+    double high = iHigh(symbol, PA_ConfirmTF, shift);
+    double low = iLow(symbol, PA_ConfirmTF, shift);
+    double prevOpen = iOpen(symbol, PA_ConfirmTF, shift + 1);
+    double prevClose = iClose(symbol, PA_ConfirmTF, shift + 1);
 
     // ============================
     // 3. ATR untuk SL/TP dinamis
@@ -3305,7 +3844,7 @@ PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
     int atrHandle = iATR(symbol, PA_ConfirmTF, 14);
     double atrArray[];
     ArraySetAsSeries(atrArray, true);
-    CopyBuffer(atrHandle, 0, 0, shift+1, atrArray);
+    CopyBuffer(atrHandle, 0, 0, shift + 1, atrArray);
     double atr = atrArray[shift];
 
     // ============================
@@ -3317,55 +3856,56 @@ PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
     double totalRange = high - low;
 
     // Validasi data
-    if(totalRange <= 0 || atr <= 0) return signal;
+    if (totalRange <= 0 || atr <= 0)
+        return signal;
 
     // --- Bullish Pin Bar ---
-    if(upTrend && lowerWick > body * 2 && upperWick < body && body <= totalRange * 0.3)
+    if (upTrend && lowerWick > body * 2 && upperWick < body && body <= totalRange * 0.3)
     {
         signal.found = true;
         signal.entryPrice = SymbolInfoDouble(symbol, SYMBOL_ASK);
-        signal.stopLoss  = low - PA_ATR_Multiplier * atr;
+        signal.stopLoss = low - PA_ATR_Multiplier * atr;
         signal.takeProfit = signal.entryPrice + PA_RewardRatio * (signal.entryPrice - signal.stopLoss);
-        signal.lotLevel  = 1;
-        signal.time      = iTime(symbol, PA_ConfirmTF, shift);
+        signal.lotLevel = 1;
+        signal.time = iTime(symbol, PA_ConfirmTF, shift);
         signal.longTrade = true;
         signal.direction = DIR_BUY;
     }
     // --- Bearish Pin Bar ---
-    else if(downTrend && upperWick > body * 2 && lowerWick < body && body <= totalRange * 0.3)
+    else if (downTrend && upperWick > body * 2 && lowerWick < body && body <= totalRange * 0.3)
     {
         signal.found = true;
         signal.entryPrice = SymbolInfoDouble(symbol, SYMBOL_BID);
-        signal.stopLoss  = high + PA_ATR_Multiplier * atr;
+        signal.stopLoss = high + PA_ATR_Multiplier * atr;
         signal.takeProfit = signal.entryPrice - PA_RewardRatio * (signal.stopLoss - signal.entryPrice);
-        signal.lotLevel  = 1;
-        signal.time      = iTime(symbol, PA_ConfirmTF, shift);
+        signal.lotLevel = 1;
+        signal.time = iTime(symbol, PA_ConfirmTF, shift);
         signal.longTrade = false;
         signal.direction = DIR_SELL;
     }
 
     // --- Bullish Engulfing ---
-    if(upTrend && prevClose < prevOpen && close > open && close > prevOpen && open < prevClose)
+    if (upTrend && prevClose < prevOpen && close > open && close > prevOpen && open < prevClose)
     {
         signal.found = true;
         signal.entryPrice = SymbolInfoDouble(symbol, SYMBOL_ASK);
-        signal.stopLoss  = low - PA_ATR_Multiplier * atr;
+        signal.stopLoss = low - PA_ATR_Multiplier * atr;
         signal.takeProfit = signal.entryPrice + PA_RewardRatio * (signal.entryPrice - signal.stopLoss);
-        signal.lotLevel  = 2;
-        signal.time      = iTime(symbol, PA_ConfirmTF, shift);
+        signal.lotLevel = 2;
+        signal.time = iTime(symbol, PA_ConfirmTF, shift);
         signal.longTrade = true;
         signal.direction = DIR_BUY;
     }
 
     // --- Bearish Engulfing ---
-    if(downTrend && prevClose > prevOpen && close < open && close < prevOpen && open > prevClose)
+    if (downTrend && prevClose > prevOpen && close < open && close < prevOpen && open > prevClose)
     {
         signal.found = true;
         signal.entryPrice = SymbolInfoDouble(symbol, SYMBOL_BID);
-        signal.stopLoss  = high + PA_ATR_Multiplier * atr;
+        signal.stopLoss = high + PA_ATR_Multiplier * atr;
         signal.takeProfit = signal.entryPrice - PA_RewardRatio * (signal.stopLoss - signal.entryPrice);
-        signal.lotLevel  = 2;
-        signal.time      = iTime(symbol, PA_ConfirmTF, shift);
+        signal.lotLevel = 2;
+        signal.time = iTime(symbol, PA_ConfirmTF, shift);
         signal.longTrade = false;
         signal.direction = DIR_SELL;
     }
@@ -3376,18 +3916,18 @@ PA_Signal DetectPriceAction_MTF(string symbol, int shift=1)
 //==================================================================
 // Fungsi Trailing Stop otomatis untuk Price Action
 //==================================================================
-double PATrailingStop(double currentPrice, double stopLoss, bool longTrade, double atr, double trailFactor=1.0)
+double PATrailingStop(double currentPrice, double stopLoss, bool longTrade, double atr, double trailFactor = 1.0)
 {
-    if(longTrade)
+    if (longTrade)
     {
         double newSL = currentPrice - trailFactor * atr;
-        if(newSL > stopLoss)
+        if (newSL > stopLoss)
             stopLoss = newSL;
     }
     else
     {
         double newSL = currentPrice + trailFactor * atr;
-        if(newSL < stopLoss)
+        if (newSL < stopLoss)
             stopLoss = newSL;
     }
     return stopLoss;
@@ -3398,25 +3938,25 @@ double PATrailingStop(double currentPrice, double stopLoss, bool longTrade, doub
 //==================================================================
 void ExecutePriceActionTrade(PA_Signal &paSignal)
 {
-    if(!paSignal.found) return;
-    
-    double lotSize = RiskManager::GetDynamicLot(0.7, 
-        (int)(MathAbs(paSignal.entryPrice - paSignal.stopLoss) / _Point / 10));
-    
-    if(paSignal.direction == DIR_BUY)
+    if (!paSignal.found)
+        return;
+
+    double lotSize = RiskManager::GetDynamicLot(0.7,
+                                                (int)(MathAbs(paSignal.entryPrice - paSignal.stopLoss) / _Point / 10));
+
+    if (paSignal.direction == DIR_BUY)
     {
         int slPips = (int)((paSignal.entryPrice - paSignal.stopLoss) / _Point / 10);
         int tpPips = (int)((paSignal.takeProfit - paSignal.entryPrice) / _Point / 10);
         ExecuteBuy(lotSize, slPips, tpPips);
     }
-    else if(paSignal.direction == DIR_SELL)
+    else if (paSignal.direction == DIR_SELL)
     {
         int slPips = (int)((paSignal.stopLoss - paSignal.entryPrice) / _Point / 10);
         int tpPips = (int)((paSignal.entryPrice - paSignal.takeProfit) / _Point / 10);
         ExecuteSell(lotSize, slPips, tpPips);
     }
 }
-
 
 //+------------------------------------------------------------------+
 //| SMC Signal Structure                                            |
@@ -3434,25 +3974,25 @@ struct SMCSignal
 //+------------------------------------------------------------------+
 //| SMC (Smart Money Concept) Parameters                            |
 //+------------------------------------------------------------------+
-input bool UseSMCSignal = true;                        // Aktifkan SMC signal detection
-input ENUM_TIMEFRAMES SMC_TF1 = PERIOD_H1;             // Timeframe 1 untuk SMC
-input ENUM_TIMEFRAMES SMC_TF2 = PERIOD_H4;             // Timeframe 2 untuk trend confirmation
-input double SMC_BaseLot = 0.01;                       // Lot dasar untuk SMC
-input int SMC_EMA_Period1 = 50;                        // EMA period untuk TF1
-input int SMC_EMA_Period2 = 50;                        // EMA period untuk TF2
-input int SMC_Lookback = 20;                           // Lookback candles untuk OB detection
-input double SMC_ATR_Multiplier = 1.5;                 // ATR multiplier untuk SL
-input double SMC_TP_Ratio = 0.8;                       // Take profit ratio (0.8 = 80% dari range)
+input bool UseSMCSignal = true;            // Aktifkan SMC signal detection
+input ENUM_TIMEFRAMES SMC_TF1 = PERIOD_H1; // Timeframe 1 untuk SMC
+input ENUM_TIMEFRAMES SMC_TF2 = PERIOD_H4; // Timeframe 2 untuk trend confirmation
+input double SMC_BaseLot = 0.01;           // Lot dasar untuk SMC
+input int SMC_EMA_Period1 = 50;            // EMA period untuk TF1
+input int SMC_EMA_Period2 = 50;            // EMA period untuk TF2
+input int SMC_Lookback = 20;               // Lookback candles untuk OB detection
+input double SMC_ATR_Multiplier = 1.5;     // ATR multiplier untuk SL
+input double SMC_TP_Ratio = 0.8;           // Take profit ratio (0.8 = 80% dari range)
 
 //==================================================================
 // Fungsi deteksi SMC Signal canggih (OB + Breaker + Stop Hunt + Multi-TF)
 // Probabilitas tinggi ~90%
 //==================================================================
-SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
-                                  int emaPeriodM1=50,
-                                  int emaPeriodM5=50,
-                                  int lookbackCandle=20,
-                                  double atrMultiplier=1.5)
+SMCSignal DetectSMCSignalAdvanced(double lotMin = 0.01,
+                                  int emaPeriodM1 = 50,
+                                  int emaPeriodM5 = 50,
+                                  int lookbackCandle = 20,
+                                  double atrMultiplier = 1.5)
 {
     SMCSignal sig;
     sig.signal = DIR_NONE;
@@ -3468,7 +4008,8 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     Dir trendTF1 = GetEMAtrend(SMC_TF1, emaPeriodM1);
     Dir trendTF2 = GetEMAtrend(SMC_TF2, emaPeriodM5);
 
-    if(trendTF1 != trendTF2) return sig; // konfirmasi trend gagal
+    if (trendTF1 != trendTF2)
+        return sig; // konfirmasi trend gagal
 
     bool upTrend = (trendTF1 == DIR_BUY);
     bool downTrend = (trendTF1 == DIR_SELL);
@@ -3478,13 +4019,21 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     // --------------------------
     double hiMax = 0, loMin = 0;
     int idxHi = -1, idxLo = -1;
-    
-    for(int i = 1; i <= lookbackCandle; i++)
+
+    for (int i = 1; i <= lookbackCandle; i++)
     {
         double hi = iHigh(_Symbol, SMC_TF1, i);
         double lo = iLow(_Symbol, SMC_TF1, i);
-        if(hi > hiMax) { hiMax = hi; idxHi = i; }
-        if(lo < loMin || loMin == 0) { loMin = lo; idxLo = i; }
+        if (hi > hiMax)
+        {
+            hiMax = hi;
+            idxHi = i;
+        }
+        if (lo < loMin || loMin == 0)
+        {
+            loMin = lo;
+            idxLo = i;
+        }
     }
 
     double supply = hiMax; // OB resistance
@@ -3494,7 +4043,7 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     double spread = _Point * 10;
 
     // Validasi zona OB
-    if(supply <= demand || supply == 0 || demand == 0) 
+    if (supply <= demand || supply == 0 || demand == 0)
         return sig;
 
     // --------------------------
@@ -3510,7 +4059,7 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     // 4. Deteksi Stop Hunt (wick spike)
     // --------------------------
     double high0 = iHigh(_Symbol, SMC_TF1, 0);
-    double low0  = iLow(_Symbol, SMC_TF1, 0);
+    double low0 = iLow(_Symbol, SMC_TF1, 0);
     double open0 = iOpen(_Symbol, SMC_TF1, 0);
     double close0 = iClose(_Symbol, SMC_TF1, 0);
     double body0 = MathAbs(close0 - open0);
@@ -3523,14 +4072,14 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     // --------------------------
     // 5. BUY Signal (Demand Zone + Stop Hunt)
     // --------------------------
-    if(upTrend && price <= demand + spread)
+    if (upTrend && price <= demand + spread)
     {
         sig.signal = DIR_BUY;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
         sig.stopLoss = demand - atr * atrMultiplier;
         sig.takeProfit = sig.entryPrice + (supply - demand) * SMC_TP_Ratio;
         sig.isStrong = true;
-        
+
         // Dynamic lot scaling berdasarkan strength
         double lotMultiplier = 1.0 + (double)(lookbackCandle - idxLo) / lookbackCandle;
         sig.lotSize = lotMin * MathMin(lotMultiplier, 3.0); // Maksimal 3x base lot
@@ -3539,14 +4088,14 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
     // --------------------------
     // 6. SELL Signal (Supply Zone + Stop Hunt)
     // --------------------------
-    if(downTrend && price >= supply - spread)
+    if (downTrend && price >= supply - spread)
     {
         sig.signal = DIR_SELL;
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         sig.stopLoss = supply + atr * atrMultiplier;
         sig.takeProfit = sig.entryPrice - (supply - demand) * SMC_TP_Ratio;
         sig.isStrong = true;
-        
+
         // Dynamic lot scaling berdasarkan strength
         double lotMultiplier = 1.0 + (double)(lookbackCandle - idxHi) / lookbackCandle;
         sig.lotSize = lotMin * MathMin(lotMultiplier, 3.0); // Maksimal 3x base lot
@@ -3560,15 +4109,16 @@ SMCSignal DetectSMCSignalAdvanced(double lotMin=0.01,
 //==================================================================
 void ExecuteSMCTrade(SMCSignal &smcSignal)
 {
-    if(smcSignal.signal == DIR_NONE) return;
-    
-    if(smcSignal.signal == DIR_BUY)
+    if (smcSignal.signal == DIR_NONE)
+        return;
+
+    if (smcSignal.signal == DIR_BUY)
     {
         int slPips = (int)((smcSignal.entryPrice - smcSignal.stopLoss) / _Point / 10);
         int tpPips = (int)((smcSignal.takeProfit - smcSignal.entryPrice) / _Point / 10);
         ExecuteBuy(smcSignal.lotSize, slPips, tpPips);
     }
-    else if(smcSignal.signal == DIR_SELL)
+    else if (smcSignal.signal == DIR_SELL)
     {
         int slPips = (int)((smcSignal.stopLoss - smcSignal.entryPrice) / _Point / 10);
         int tpPips = (int)((smcSignal.entryPrice - smcSignal.takeProfit) / _Point / 10);
@@ -3579,15 +4129,15 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //+------------------------------------------------------------------+
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
-input bool UseStochastic = true;                       // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M5;         // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M15;        // Timeframe tinggi untuk konfirmasi
-input int Stoch_KPeriod = 14;                          // %K period
-input int Stoch_DPeriod = 3;                           // %D period
-input int Stoch_Slowing = 3;                           // Slowing period
-input int Stoch_EMAPeriod = 50;                        // EMA period untuk trend filter
-input double Stoch_ATR_Multiplier = 1.5;               // ATR multiplier untuk SL
-input double Stoch_TrailFactor = 1.0;                  // Trailing stop factor
+input bool UseStochastic = true;                 // Aktifkan stochastic detection
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M5;   // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M15; // Timeframe tinggi untuk konfirmasi
+input int Stoch_KPeriod = 14;                    // %K period
+input int Stoch_DPeriod = 3;                     // %D period
+input int Stoch_Slowing = 3;                     // Slowing period
+input int Stoch_EMAPeriod = 50;                  // EMA period untuk trend filter
+input double Stoch_ATR_Multiplier = 1.5;         // ATR multiplier untuk SL
+input double Stoch_TrailFactor = 1.0;            // Trailing stop factor
 
 //==================================================================
 // Fungsi Stochastic Ultimate Advanced (Multi-TF + Trend Filter + ATR SL/TP)
@@ -3595,12 +4145,12 @@ input double Stoch_TrailFactor = 1.0;                  // Trailing stop factor
 //==================================================================
 StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
                                                 ENUM_TIMEFRAMES tfHigh,
-                                                int kPeriod=14,
-                                                int dPeriod=3,
-                                                int slowing=3,
-                                                int emaPeriod=50,
-                                                double atrMultiplier=1.5,
-                                                int shift=0)
+                                                int kPeriod = 14,
+                                                int dPeriod = 3,
+                                                int slowing = 3,
+                                                int emaPeriod = 50,
+                                                double atrMultiplier = 1.5,
+                                                int shift = 0)
 {
     StochSignal sig;
     sig.signal = DIR_NONE;
@@ -3615,10 +4165,10 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
     double kLowArray[], dLowArray[];
     ArraySetAsSeries(kLowArray, true);
     ArraySetAsSeries(dLowArray, true);
-    
-    CopyBuffer(stochLowHandle, 0, 0, shift+1, kLowArray);
-    CopyBuffer(stochLowHandle, 1, 0, shift+1, dLowArray);
-    
+
+    CopyBuffer(stochLowHandle, 0, 0, shift + 1, kLowArray);
+    CopyBuffer(stochLowHandle, 1, 0, shift + 1, dLowArray);
+
     double kLow = kLowArray[shift];
     double dLow = dLowArray[shift];
     sig.kValueLow = kLow;
@@ -3629,10 +4179,10 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
     double kHighArray[], dHighArray[];
     ArraySetAsSeries(kHighArray, true);
     ArraySetAsSeries(dHighArray, true);
-    
-    CopyBuffer(stochHighHandle, 0, 0, shift+1, kHighArray);
-    CopyBuffer(stochHighHandle, 1, 0, shift+1, dHighArray);
-    
+
+    CopyBuffer(stochHighHandle, 0, 0, shift + 1, kHighArray);
+    CopyBuffer(stochHighHandle, 1, 0, shift + 1, dHighArray);
+
     double kHigh = kHighArray[shift];
     double dHigh = dHighArray[shift];
     sig.kValueHigh = kHigh;
@@ -3645,36 +4195,36 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
     int atrHandle = iATR(_Symbol, tfLow, 14);
     double atrArray[];
     ArraySetAsSeries(atrArray, true);
-    CopyBuffer(atrHandle, 0, 0, shift+1, atrArray);
+    CopyBuffer(atrHandle, 0, 0, shift + 1, atrArray);
     double atr = atrArray[shift];
 
     //--- Validasi data
-    if(kLow == 0 || dLow == 0 || kHigh == 0 || dHigh == 0 || atr == 0)
+    if (kLow == 0 || dLow == 0 || kHigh == 0 || dHigh == 0 || atr == 0)
         return sig;
 
     //--- Logika sinyal advanced
     bool bullishCross = (kLow > dLow) && (kLow < 20);
     bool bearishCross = (kLow < dLow) && (kLow > 80);
-    
+
     bool strongBullish = (kLow < 20) && (trendHigh == DIR_BUY) && (kHigh < 30);
     bool strongBearish = (kLow > 80) && (trendHigh == DIR_SELL) && (kHigh > 70);
 
-    if(strongBullish && bullishCross)
+    if (strongBullish && bullishCross)
     {
         sig.signal = DIR_BUY;
         sig.isStrong = true;
     }
-    else if(strongBearish && bearishCross)
+    else if (strongBearish && bearishCross)
     {
         sig.signal = DIR_SELL;
         sig.isStrong = true;
     }
-    else if(bullishCross)
+    else if (bullishCross)
     {
         sig.signal = DIR_BUY;
         sig.isStrong = false;
     }
-    else if(bearishCross)
+    else if (bearishCross)
     {
         sig.signal = DIR_SELL;
         sig.isStrong = false;
@@ -3683,14 +4233,14 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
     //--- Tambahkan SL/TP berbasis ATR
     double closePrice = iClose(_Symbol, tfLow, shift);
     double sl = 0, tp = 0;
-    
-    if(sig.signal == DIR_BUY)
+
+    if (sig.signal == DIR_BUY)
     {
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
         sl = closePrice - atr * atrMultiplier;
         tp = closePrice + atr * atrMultiplier * 2;
     }
-    else if(sig.signal == DIR_SELL)
+    else if (sig.signal == DIR_SELL)
     {
         sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         sl = closePrice + atr * atrMultiplier;
@@ -3706,17 +4256,19 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
 //==================================================================
 // Fungsi Trailing Stop otomatis untuk Stochastic Ultimate
 //==================================================================
-double StochTrailingStop(double currentPrice, double stopLoss, bool longTrade, double atr, double trailFactor=1.0)
+double StochTrailingStop(double currentPrice, double stopLoss, bool longTrade, double atr, double trailFactor = 1.0)
 {
-    if(longTrade)
+    if (longTrade)
     {
         double newSL = currentPrice - trailFactor * atr;
-        if(newSL > stopLoss) stopLoss = newSL;
+        if (newSL > stopLoss)
+            stopLoss = newSL;
     }
     else
     {
         double newSL = currentPrice + trailFactor * atr;
-        if(newSL < stopLoss) stopLoss = newSL;
+        if (newSL < stopLoss)
+            stopLoss = newSL;
     }
     return stopLoss;
 }
@@ -3726,20 +4278,20 @@ double StochTrailingStop(double currentPrice, double stopLoss, bool longTrade, d
 //==================================================================
 void ExecuteStochasticTrade(StochSignal &stochSignal)
 {
-    if(stochSignal.signal == DIR_NONE) return;
-    
+    if (stochSignal.signal == DIR_NONE)
+        return;
+
     double lotSize = RiskManager::GetDynamicLot(
         stochSignal.isStrong ? 0.8 : 0.6, // Higher confidence for strong signals
-        (int)(MathAbs(stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10)
-    );
-    
-    if(stochSignal.signal == DIR_BUY)
+        (int)(MathAbs(stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10));
+
+    if (stochSignal.signal == DIR_BUY)
     {
         int slPips = (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10);
         int tpPips = (int)((stochSignal.takeProfit - stochSignal.entryPrice) / _Point / 10);
         ExecuteBuy(lotSize, slPips, tpPips);
     }
-    else if(stochSignal.signal == DIR_SELL)
+    else if (stochSignal.signal == DIR_SELL)
     {
         int slPips = (int)((stochSignal.stopLoss - stochSignal.entryPrice) / _Point / 10);
         int tpPips = (int)((stochSignal.entryPrice - stochSignal.takeProfit) / _Point / 10);
@@ -3750,22 +4302,21 @@ void ExecuteStochasticTrade(StochSignal &stochSignal)
 //+------------------------------------------------------------------+
 //| Signal Dashboard Configuration                                  |
 //+------------------------------------------------------------------+
-input bool EnableDashboard = true;                       // Aktifkan Signal Dashboard
-input bool Dashboard_SendTelegram = true;               // Kirim Telegram Notifikasi
+input bool EnableDashboard = true;                                                // Aktifkan Signal Dashboard
+input bool Dashboard_SendTelegram = true;                                         // Kirim Telegram Notifikasi
 input string TelegramBotToken = "8470744929:AAHJ02vl-RUxRbVdc_kBZuSZdPx_Qzvtnr8"; // token bot
-input string TelegramChatID  = "-1002864046051"; // chat ID grup/channel
-input bool EnableTelegram = true; // bisa diubah di properties EA
+input string TelegramChatID = "-1002864046051";                                   // chat ID grup/channel
+input bool EnableTelegram = true;                                                 // bisa diubah di properties EA
 
-input int Dashboard_LabelFontSize = 10;                 // Ukuran font label chart
-input int Dashboard_MaxColumns = 3;                     // Max kolom label chart
-input int Dashboard_XBase = 20;                         // Posisi X pertama label
-input int Dashboard_YBase = 50;                         // Posisi Y pertama label
-input int Dashboard_XStep = 200;                        // Jarak X antar label
-input int Dashboard_YStep = 50;                         // Jarak Y antar label
-input int Dashboard_BarLength = 8;                      // Panjang bar TP/SL
-input bool Dashboard_AnimateBars = true;                // Animate bars per tick
-input int Dashboard_TrendCandles = 5;                   // Jumlah candle untuk mini trend
-
+input int Dashboard_LabelFontSize = 10;  // Ukuran font label chart
+input int Dashboard_MaxColumns = 3;      // Max kolom label chart
+input int Dashboard_XBase = 20;          // Posisi X pertama label
+input int Dashboard_YBase = 50;          // Posisi Y pertama label
+input int Dashboard_XStep = 200;         // Jarak X antar label
+input int Dashboard_YStep = 50;          // Jarak Y antar label
+input int Dashboard_BarLength = 8;       // Panjang bar TP/SL
+input bool Dashboard_AnimateBars = true; // Animate bars per tick
+input int Dashboard_TrendCandles = 5;    // Jumlah candle untuk mini trend
 
 //+------------------------------------------------------------------+
 //| Strength Enum                                                    |
@@ -3773,7 +4324,7 @@ input int Dashboard_TrendCandles = 5;                   // Jumlah candle untuk m
 enum Strength
 {
     WEAK,
-    MEDIUM, 
+    MEDIUM,
     STRONG
 };
 
@@ -3788,26 +4339,30 @@ struct SignalInfo
     double lot;
     double sl;
     double tp;
-    double entry;  // Tambahkan field entry
+    double entry; // Tambahkan field entry
     double confidence;
 };
 
 //+------------------------------------------------------------------+
 //| Global Variables                                                |
 //+------------------------------------------------------------------+
-SignalInfo Signals[20];  // Array untuk menyimpan sinyal
-int SignalCount = 0;     // Jumlah sinyal aktif
+SignalInfo Signals[20];           // Array untuk menyimpan sinyal
+int SignalCount = 0;              // Jumlah sinyal aktif
 datetime LastDashboardUpdate = 0; // Waktu update terakhir dashboard
 
 // Helper function untuk error descriptions
 string GetLastErrorDescription(int error_code)
 {
-    switch(error_code)
+    switch (error_code)
     {
-        case 4014: return "URL not allowed - Add to WebRequest list";
-        case 4060: return "WebRequest not allowed - Enable in EA settings";
-        case 4016: return "No internet connection";
-        default: return "Unknown error";
+    case 4014:
+        return "URL not allowed - Add to WebRequest list";
+    case 4060:
+        return "WebRequest not allowed - Enable in EA settings";
+    case 4016:
+        return "No internet connection";
+    default:
+        return "Unknown error";
     }
 }
 
@@ -3830,31 +4385,31 @@ int alertCooldown = 60; // Cooldown 60 detik
 
 void SendTradeAlert(string symbol, Dir direction, double lot, double entry, double sl, double tp, string signal_type)
 {
-    if(!Dashboard_SendTelegram || !EnableTelegram) 
+    if (!Dashboard_SendTelegram || !EnableTelegram)
     {
         Print("⚠️ Telegram alerts disabled");
         return;
     }
-    
+
     // Cek cooldown untuk mencegah spam
-    if(TimeCurrent() - lastAlertTime < alertCooldown)
+    if (TimeCurrent() - lastAlertTime < alertCooldown)
     {
         Print("⏳ Telegram alert dalam cooldown, skip...");
         return;
     }
-    
+
     // Cek apakah alert untuk symbol dan direction yang sama sudah dikirim
-    if(symbol == lastSymbol && direction == lastDirection && MathAbs(entry - lastEntry) < Point() * 10)
+    if (symbol == lastSymbol && direction == lastDirection && MathAbs(entry - lastEntry) < Point() * 10)
     {
         Print("⚠️ Alert untuk ", symbol, " ", EnumToString(direction), " sudah dikirim, skip...");
         return;
     }
 
     Print("📸 Capturing chart analysis...");
-    
+
     // Capture chart screenshot dengan analisa teknikal
     string chart_image = CaptureChartWithAnalysis(symbol, direction, entry, sl, tp);
-    
+
     string emoji = (direction == DIR_BUY) ? "🚀🟢" : "🔻🔴";
     string dir_text = (direction == DIR_BUY) ? "BUY 📈" : "SELL 📉";
 
@@ -3871,7 +4426,7 @@ void SendTradeAlert(string symbol, Dir direction, double lot, double entry, doub
     message += "🔴 *STOP LOSS*: " + DoubleToString(sl, _Digits) + "\n";
     message += "🟡 *TAKE PROFIT*: " + DoubleToString(tp, _Digits) + "\n\n";
     message += "⚖️ *RISK/REWARD*: 1:" + DoubleToString(rr_ratio, 1) + "\n";
-    message += "⏰ *Time*: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\n";
+    message += "⏰ *Time*: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS) + "\n";
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
     message += "📊 *CHART ANALYSIS*: Lihat gambar di bawah untuk analisa teknikal\n";
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -3879,13 +4434,13 @@ void SendTradeAlert(string symbol, Dir direction, double lot, double entry, doub
     message += "📲 Rey Riyan Sanjaya 🤖";
 
     Print("🚀 Sending VIP Trade Alert with Chart Analysis...");
-    
-    if(chart_image != "")
+
+    if (chart_image != "")
     {
         // Kirim gambar chart terlebih dahulu, lalu message
         SendTelegramPhoto(chart_image, message);
         Print("✅ Chart image sent successfully");
-        
+
         // Hapus file setelah dikirim
         FileDelete(chart_image);
     }
@@ -3894,7 +4449,7 @@ void SendTradeAlert(string symbol, Dir direction, double lot, double entry, doub
         Print("❌ Gagal capture chart, kirim alert tanpa gambar");
         SendTelegramMessage(message);
     }
-    
+
     // Update state terakhir
     lastSymbol = symbol;
     lastDirection = direction;
@@ -3906,31 +4461,31 @@ void SendTradeAlert(string symbol, Dir direction, double lot, double entry, doub
 string CaptureChartWithAnalysis(string symbol, Dir direction, double entry, double sl, double tp)
 {
     string filename = "";
-    
+
     // Simbol dan timeframe sebelumnya
     string current_symbol = ChartSymbol(0);
     ENUM_TIMEFRAMES current_tf = (ENUM_TIMEFRAMES)ChartPeriod(0);
-    
+
     // Switch ke simbol yang diinginkan jika berbeda
-    if(symbol != current_symbol)
+    if (symbol != current_symbol)
     {
         ChartSetSymbolPeriod(0, symbol, PERIOD_H1);
         Sleep(1000); // Beri waktu untuk load chart
     }
-    
+
     // Tambahkan analisa teknikal
     AddTechnicalAnalysis(symbol, direction, entry, sl, tp);
-    
+
     // Capture screenshot
     filename = "Chart_" + symbol + "_" + IntegerToString(TimeCurrent()) + ".png";
     bool success = ChartScreenShot(0, filename, 1024, 768);
-    
+
     // Kembali ke chart asli jika sebelumnya diubah
-    if(symbol != current_symbol)
+    if (symbol != current_symbol)
     {
         ChartSetSymbolPeriod(0, current_symbol, current_tf);
     }
-    
+
     return success ? filename : "";
 }
 
@@ -3939,37 +4494,37 @@ void AddTechnicalAnalysis(string symbol, Dir direction, double entry, double sl,
 {
     // Hapus objects sebelumnya
     ObjectsDeleteAll(0, "ALERT_");
-    
+
     // Tambahkan garis entry, SL, TP
     CreateHorizontalLine("ALERT_ENTRY", entry, clrLime, 2, STYLE_SOLID, "ENTRY");
     CreateHorizontalLine("ALERT_SL", sl, clrRed, 2, STYLE_SOLID, "STOP LOSS");
     CreateHorizontalLine("ALERT_TP", tp, clrYellow, 2, STYLE_SOLID, "TAKE PROFIT");
-    
+
     // Tambahkan zona support/resistance berdasarkan direction
-    if(direction == DIR_BUY)
+    if (direction == DIR_BUY)
     {
         // Untuk BUY: highlight support zone
         double support_zone = entry - (entry - sl) * 0.5;
-        CreateRectangle("ALERT_SUPPORT", TimeCurrent()-1000, support_zone, TimeCurrent()+1000, sl, clrGreen, 1, STYLE_DASHDOT, "Support Zone");
-        
+        CreateRectangle("ALERT_SUPPORT", TimeCurrent() - 1000, support_zone, TimeCurrent() + 1000, sl, clrGreen, 1, STYLE_DASHDOT, "Support Zone");
+
         // Tambahkan arrow buy
         CreateArrowBuy("ALERT_BUY_ARROW", TimeCurrent(), entry, clrLime);
     }
     else
     {
-        // Untuk SELL: highlight resistance zone  
+        // Untuk SELL: highlight resistance zone
         double resistance_zone = entry + (sl - entry) * 0.5;
-        CreateRectangle("ALERT_RESISTANCE", TimeCurrent()-1000, resistance_zone, TimeCurrent()+1000, sl, clrRed, 1, STYLE_DASHDOT, "Resistance Zone");
-        
+        CreateRectangle("ALERT_RESISTANCE", TimeCurrent() - 1000, resistance_zone, TimeCurrent() + 1000, sl, clrRed, 1, STYLE_DASHDOT, "Resistance Zone");
+
         // Tambahkan arrow sell
         CreateArrowSell("ALERT_SELL_ARROW", TimeCurrent(), entry, clrRed);
     }
-    
+
     // Tambahkan info text
     string trend_text = (direction == DIR_BUY) ? "BULLISH TREND 📈" : "BEARISH TREND 📉";
     CreateTextLabel("ALERT_TREND", trend_text, 10, 30, (direction == DIR_BUY) ? clrLime : clrRed, "Arial", 12);
     CreateTextLabel("ALERT_BOT", "X-REY TRADE BOT", 10, 50, clrGold, "Arial", 10);
-    
+
     // Refresh chart untuk update objects
     ChartRedraw();
     Sleep(500); // Beri waktu untuk render
@@ -3979,96 +4534,96 @@ void AddTechnicalAnalysis(string symbol, Dir direction, double entry, double sl,
 void SendTelegramPhoto(string photo_path, string caption = "")
 {
     // Validasi file exists
-    if(!FileIsExist(photo_path))
+    if (!FileIsExist(photo_path))
     {
         Print("❌ Photo file not found: ", photo_path);
         return;
     }
-    
+
     string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendPhoto";
-    
+
     // Create multipart form data
     char post_data[];
     char result[];
     string headers = "Content-Type: multipart/form-data; boundary=Boundary";
     string response_headers;
-    
+
     // Baca file photo
-    int file_handle = FileOpen(photo_path, FILE_READ|FILE_BIN);
-    if(file_handle == INVALID_HANDLE)
+    int file_handle = FileOpen(photo_path, FILE_READ | FILE_BIN);
+    if (file_handle == INVALID_HANDLE)
     {
         Print("❌ Failed to open photo file: ", photo_path);
         return;
     }
-    
+
     int file_size = (int)FileSize(file_handle);
     uchar file_buffer[];
     ArrayResize(file_buffer, file_size);
     FileReadArray(file_handle, file_buffer, 0, file_size);
     FileClose(file_handle);
-    
+
     // Build form data
     string boundary = "Boundary";
     string form_data = "";
-    
+
     // Add chat_id
     form_data += "--" + boundary + "\r\n";
     form_data += "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n";
     form_data += TelegramChatID + "\r\n";
-    
+
     // Add caption if provided
-    if(caption != "")
+    if (caption != "")
     {
         form_data += "--" + boundary + "\r\n";
         form_data += "Content-Disposition: form-data; name=\"caption\"\r\n\r\n";
         form_data += caption + "\r\n";
-        
+
         form_data += "--" + boundary + "\r\n";
         form_data += "Content-Disposition: form-data; name=\"parse_mode\"\r\n\r\n";
         form_data += "Markdown\r\n";
     }
-    
+
     // Add photo
     form_data += "--" + boundary + "\r\n";
     form_data += "Content-Disposition: form-data; name=\"photo\"; filename=\"" + photo_path + "\"\r\n";
     form_data += "Content-Type: image/png\r\n\r\n";
-    
+
     // Calculate total size
     int form_data_size = StringLen(form_data);
     int closing_boundary_size = StringLen("\r\n--" + boundary + "--\r\n");
     int total_size = form_data_size + file_size + closing_boundary_size;
-    
+
     // Resize post_data array
     ArrayResize(post_data, total_size);
-    
+
     // Copy form data to post_data
     int position = 0;
     StringToCharArray(form_data, post_data, position, StringLen(form_data), CP_UTF8);
     position += StringLen(form_data);
-    
+
     // Copy file data to post_data - PERBAIKAN DI SINI
-    for(int i = 0; i < file_size && position < total_size; i++, position++)
+    for (int i = 0; i < file_size && position < total_size; i++, position++)
     {
         post_data[position] = (char)file_buffer[i];
     }
-    
+
     // Add closing boundary
     string closing = "\r\n--" + boundary + "--\r\n";
     StringToCharArray(closing, post_data, position, StringLen(closing), CP_UTF8);
-    
+
     // Send HTTP POST request
     int response = WebRequest("POST", url, headers, 5000, post_data, result, response_headers);
-    
-    if(response == 200)
+
+    if (response == 200)
     {
         Print("✅ Telegram photo sent successfully");
     }
     else
     {
         Print("❌ Failed to send Telegram photo. Error: ", response);
-        
+
         // Fallback: try sending message without photo
-        if(caption != "")
+        if (caption != "")
         {
             Print("🔄 Trying fallback to text message...");
             SendTelegramMessage("📸 *CHART ANALYSIS FAILED* \n" + caption);
@@ -4127,9 +4682,9 @@ void CreateArrowSell(string name, datetime time, double price, color clr)
 double CalculateRRRatio(Dir direction, double entry, double sl, double tp)
 {
     double rr_ratio = 0;
-    if(sl > 0 && entry > 0)
+    if (sl > 0 && entry > 0)
     {
-        if(direction == DIR_BUY)
+        if (direction == DIR_BUY)
             rr_ratio = (tp - entry) / (entry - sl);
         else
             rr_ratio = (entry - tp) / (sl - entry);
@@ -4147,40 +4702,74 @@ void ResetAlertState()
     Print("✅ Alert state direset");
 }
 
-
 //==================================================================
 // Fungsi: UpdateSignalsUltimateLive2 (Super Interaktif ✨)
 //==================================================================
 void UpdateSignalsUltimateLive2()
 {
-    if(SignalCount == 0) 
+    if (SignalCount == 0)
     {
         ObjectsDeleteAll(0, -1, OBJ_LABEL);
         return;
     }
 
     int countBuy = 0, countSell = 0;
-    for(int i = 0; i < SignalCount; i++)
+    for (int i = 0; i < SignalCount; i++)
     {
-        if(Signals[i].signal == DIR_BUY) countBuy++;
-        else if(Signals[i].signal == DIR_SELL) countSell++;
+        if (Signals[i].signal == DIR_BUY)
+            countBuy++;
+        else if (Signals[i].signal == DIR_SELL)
+            countSell++;
     }
 
     Dir votedSignal = (countBuy > countSell ? DIR_BUY : (countSell > countBuy ? DIR_SELL : DIR_NONE));
-    string voteEmoji = (votedSignal == DIR_BUY ? "🚀🟢 BUY" : (votedSignal == DIR_SELL ? "🔻🔴 SELL" : "⚪ NO SIGNAL"));
+    string voteEmoji = (votedSignal == DIR_BUY ? "🚀 BUY" : (votedSignal == DIR_SELL ? "🔻 SELL" : "⚪ NO SIGNAL"));
 
-    string txt = "✨📊 *ULTIMATE LIVE DASHBOARD* 📊✨\n";
-    txt += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    // DAPATKAN INFORMASI PAIR DAN MARKET LENGKAP
+    string pairName = _Symbol;
+    double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point;
+    double atr = iATR(_Symbol, PERIOD_M15, 14);
+    string marketCondition = GetMarketCondition();
+    string marketTrend = GetMarketTrend();
+    string marketSession = GetMarketSession();
+
+    // Informasi account
+    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+    double margin = AccountInfoDouble(ACCOUNT_MARGIN);
+    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+    double marginLevel = margin > 0 ? equity / margin * 100 : 0;
+
+    // Waktu saat ini
+    MqlDateTime timeNow;
+    TimeCurrent(timeNow);
+    string timeStr = StringFormat("%02d:%02d:%02d", timeNow.hour, timeNow.min, timeNow.sec);
+
+    // GUNAKAN EMOJI YANG STANDARD & SIMPLE
+    string txt = "📊 *ULTIMATE LIVE DASHBOARD*\n";
+    txt += "═══════════════════════════\n";
+    txt += "💼 *Pair*: " + pairName + " | 🕒 " + timeStr + "\n";
+    txt += "💰 *Current Price*: " + DoubleToString(currentPrice, _Digits) + "\n";
+    txt += "📈 *Spread*: " + DoubleToString(spread * 10000, 1) + " pips\n";
+    txt += "📊 *ATR (M15)*: " + DoubleToString(atr * 10000, 1) + " pips\n";
+    txt += "🌡️ *Market Condition*: " + marketCondition + "\n";
+    txt += "📈 *Market Trend*: " + marketTrend + "\n";
+    txt += "🌍 *Trading Session*: " + marketSession + "\n";
+    txt += "💳 *Balance*: $" + DoubleToString(balance, 2) + "\n";
+    txt += "📈 *Equity*: $" + DoubleToString(equity, 2) + "\n";
+    txt += "🛡️ *Margin Level*: " + DoubleToString(marginLevel, 1) + "%\n";
     txt += "🏆 *Voting Result*: " + voteEmoji + "\n";
-    txt += "==============================\n\n";
+    txt += "═══════════════════════════\n\n";
 
     int strong = 0, medium = 0, weak = 0;
     double totalProfit = 0, maxRisk = 0;
+    double totalRR = 0;
 
-    for(int i = 0; i < SignalCount; i++)
+    for (int i = 0; i < SignalCount; i++)
     {
         SignalInfo sig = Signals[i];
-        string signalText = (sig.signal == DIR_BUY ? "BUY 📈" : (sig.signal == DIR_SELL ? "SELL 📉" : "NONE ⏹️"));
+        string signalText = (sig.signal == DIR_BUY ? "BUY 📈" : (sig.signal == DIR_SELL ? "SELL 📉" : "NONE ⏸️"));
         string strengthText = (sig.strength == STRONG ? "🔥 STRONG" : (sig.strength == MEDIUM ? "⚡ MEDIUM" : "💤 WEAK"));
         string votedTag = (sig.signal == votedSignal ? " ✅" : "");
 
@@ -4188,44 +4777,62 @@ void UpdateSignalsUltimateLive2()
         double risk = MathAbs(sig.entry - sig.sl) * 10000;
         double rrRatio = risk > 0 ? estProfit / risk : 0;
 
+        // Hitung distance dari current price
+        double distancePips = MathAbs(currentPrice - sig.entry) * 10000;
+        string distanceText = StringFormat("%.1f pips", distancePips / 10);
+
         txt += StringFormat(
-            "📌 *%s* %s\n"
+            "📌 *%s*%s\n"
             "➡️ Signal: %s | Strength: %s\n"
             "📍 Entry: %.5f | SL: %.5f | TP: %.5f\n"
-            "💰 Lot: %.2f | 📊 R/R: %.2fx\n"
-            "📈 Est. Profit: %.1f Pips | ⚠️ Risk: %.1f Pips\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n\n",
+            "📏 Distance: %s | R/R: %.2fx\n"
+            "💰 Lot: %.2f | Est. Profit: %.1f pips\n"
+            "⚠️ Risk: %.1f pips | Margin: $%.2f\n"
+            "────────────────────\n\n",
             sig.name, votedTag, signalText, strengthText,
-            sig.entry, sig.sl, sig.tp, sig.lot, rrRatio,
-            estProfit / 10, risk / 10
-        );
+            sig.entry, sig.sl, sig.tp,
+            distanceText, rrRatio,
+            sig.lot, estProfit / 10, risk / 10,
+            CalculateMargin(sig.lot));
 
         totalProfit += estProfit;
-        if(risk > maxRisk) maxRisk = risk;
-        if(sig.strength == STRONG) strong++;
-        else if(sig.strength == MEDIUM) medium++;
-        else weak++;
+        totalRR += rrRatio;
+        if (risk > maxRisk)
+            maxRisk = risk;
+        if (sig.strength == STRONG)
+            strong++;
+        else if (sig.strength == MEDIUM)
+            medium++;
+        else
+            weak++;
     }
 
-    // SUMMARY SECTION 🚀
+    // Hitung rata-rata RR Ratio
+    double avgRR = SignalCount > 0 ? totalRR / SignalCount : 0;
+
+    // SUMMARY SECTION
     txt += StringFormat(
         "📊 *OVERALL SUMMARY*\n"
-        "🟢 BUY: %d | 🔴 SELL: %d\n"
-        "🔥 Strong: %d | ⚡ Medium: %d | 😴 Weak: %d\n"
-        "💵 Total Est. Profit: %.1f Pips\n"
-        "⚠️ Max Risk: %.1f Pips\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "🤖 Powered by *X-Rey Trade Bot*",
-        "🤖 Made by *Rey Riyan Sanjaya*",
-        countBuy, countSell, strong, medium, weak,
-        totalProfit / 10000, maxRisk / 10000
-    );
+        "🟢 BUY: %d | 🔴 SELL: %d | 📋 Total: %d\n"
+        "🔥 Strong: %d | ⚡ Medium: %d | 💤 Weak: %d\n"
+        "📈 Avg R/R Ratio: %.2fx\n"
+        "💵 Total Est. Profit: %.1f pips\n"
+        "⚠️ Max Risk: %.1f pips\n"
+        "💳 Free Margin: $%.2f\n"
+        "═══════════════════════════\n"
+        "🤖 Powered by *X-Rey Trade Bot*\n"
+        "👨💻 Made by *Rey Riyan Sanjaya*",
+        countBuy, countSell, SignalCount,
+        strong, medium, weak,
+        avgRR,
+        totalProfit / 10000, maxRisk / 10000,
+        freeMargin);
 
     // Kirim ke Telegram
-    if(Dashboard_SendTelegram && EnableTelegram)
+    if (Dashboard_SendTelegram && EnableTelegram)
     {
         static datetime lastSendTime = 0;
-        if(TimeCurrent() - lastSendTime >= 30)
+        if (TimeCurrent() - lastSendTime >= 30)
         {
             SendTelegramMessage(txt);
             lastSendTime = TimeCurrent();
@@ -4236,6 +4843,68 @@ void UpdateSignalsUltimateLive2()
     UpdateChartLabels();
 }
 
+//+------------------------------------------------------------------+
+//| Fungsi Bantu Tambahan                                           |
+//+------------------------------------------------------------------+
+
+// Fungsi untuk mendapatkan kondisi market
+string GetMarketCondition()
+{
+    double atr = iATR(_Symbol, PERIOD_M15, 14);
+    double atrPercent = (atr / SymbolInfoDouble(_Symbol, SYMBOL_BID)) * 100;
+
+    if (atrPercent > 0.1)
+        return "🌊 HIGH VOLATILITY";
+    else if (atrPercent > 0.05)
+        return "🌤️ MODERATE VOLATILITY";
+    else
+        return "🌿 LOW VOLATILITY";
+}
+
+// Fungsi untuk menghitung margin
+double CalculateMargin(double lotSize)
+{
+    double margin = 0;
+    double contractSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+    double leverage = (double)AccountInfoInteger(ACCOUNT_LEVERAGE);
+
+    if (leverage > 0)
+        margin = (lotSize * contractSize * SymbolInfoDouble(_Symbol, SYMBOL_BID)) / leverage;
+
+    return margin;
+}
+
+// Fungsi untuk mendapatkan trend market
+string GetMarketTrend()
+{
+    double ema50 = iMA(_Symbol, PERIOD_H1, 50, 0, MODE_EMA, PRICE_CLOSE);
+    double ema200 = iMA(_Symbol, PERIOD_H1, 200, 0, MODE_EMA, PRICE_CLOSE);
+    double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+
+    if (price > ema50 && ema50 > ema200)
+        return "🟢 BULLISH TREND";
+    else if (price < ema50 && ema50 < ema200)
+        return "🔴 BEARISH TREND";
+    else
+        return "🟡 RANGING MARKET";
+}
+
+// Fungsi untuk mendapatkan session market
+string GetMarketSession()
+{
+    MqlDateTime timeNow;
+    TimeCurrent(timeNow);
+    int hour = timeNow.hour;
+
+    if (hour >= 0 && hour < 5)
+        return "🌙 ASIA SESSION";
+    else if (hour >= 5 && hour < 13)
+        return "🌍 LONDON SESSION";
+    else if (hour >= 13 && hour < 21)
+        return "🇺🇸 NY SESSION";
+    else
+        return "🌃 OVERLAP SESSION";
+}
 //==================================================================
 // Fungsi: SendSystemStatus
 // Deskripsi: Kirim status sistem ke Telegram
@@ -4245,29 +4914,29 @@ void UpdateSignalsUltimateLive2()
 //+------------------------------------------------------------------+
 void SendSystemStatus()
 {
-    if(!Dashboard_SendTelegram || !EnableTelegram) 
+    if (!Dashboard_SendTelegram || !EnableTelegram)
     {
         return;
     }
-    
+
     double balance = AccountInfoDouble(ACCOUNT_BALANCE);
     double equity = AccountInfoDouble(ACCOUNT_EQUITY);
     double margin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
     double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
     int positions = PositionsTotal();
     double profit = 0;
-    
+
     // Hitung total profit dari semua posisi
-    for(int i = 0; i < positions; i++)
+    for (int i = 0; i < positions; i++)
     {
         ulong ticket = PositionGetTicket(i);
-        if(ticket > 0)
+        if (ticket > 0)
             profit += PositionGetDouble(POSITION_PROFIT);
     }
-    
+
     string status_emoji = (equity >= balance) ? "🟢" : "🔴";
     string status_text = (equity >= balance) ? "PROFIT" : "DRAWDOWN";
-    
+
     string message = status_emoji + " *SYSTEM STATUS* " + status_emoji + "\n";
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
     message += "💼 *Balance*: $" + DoubleToString(balance, 2) + "\n";
@@ -4277,13 +4946,12 @@ void SendSystemStatus()
     message += "📊 *Margin Level*: " + (marginLevel > 0 ? DoubleToString(marginLevel, 1) + "%" : "N/A") + "\n";
     message += "💰 *Active Positions*: " + IntegerToString(positions) + "\n";
     message += "💸 *Floating P/L*: $" + DoubleToString(profit, 2) + "\n";
-    message += "🕒 *Update Time*: " + TimeToString(TimeCurrent(), TIME_DATE|TIME_SECONDS) + "\n";
+    message += "🕒 *Update Time*: " + TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS) + "\n";
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-    
+
     Print("Sending Telegram System Status...");
     SendTelegramMessage(message);
 }
-
 
 //==================================================================
 // Fungsi: Collect Active Signals
@@ -4291,12 +4959,12 @@ void SendSystemStatus()
 void CollectActiveSignals()
 {
     SignalCount = 0; // Reset counter
-    
+
     // Collect dari semua sistem deteksi yang aktif
-    if(UseOrderBlock)
+    if (UseOrderBlock)
     {
         OBSignal obSignal = DetectOrderBlockPro(OB_BaseLot, OB_EMAPeriod1, OB_EMAPeriod2, OB_Levels, OB_ZoneBufferPips, OB_Lookback);
-        if(obSignal.signal != DIR_NONE)
+        if (obSignal.signal != DIR_NONE)
         {
             Signals[SignalCount].name = "OrderBlock";
             Signals[SignalCount].signal = obSignal.signal;
@@ -4310,10 +4978,10 @@ void CollectActiveSignals()
         }
     }
 
-    if(UsePriceAction)
+    if (UsePriceAction)
     {
         PA_Signal paSignal = DetectPriceAction_MTF(_Symbol, 1);
-        if(paSignal.found)
+        if (paSignal.found)
         {
             Signals[SignalCount].name = "PriceAction";
             Signals[SignalCount].signal = paSignal.direction;
@@ -4328,10 +4996,10 @@ void CollectActiveSignals()
         }
     }
 
-    if(UseSMCSignal)
+    if (UseSMCSignal)
     {
         SMCSignal smcSignal = DetectSMCSignalAdvanced(SMC_BaseLot, SMC_EMA_Period1, SMC_EMA_Period2, SMC_Lookback, SMC_ATR_Multiplier);
-        if(smcSignal.signal != DIR_NONE && smcSignal.isStrong)
+        if (smcSignal.signal != DIR_NONE && smcSignal.isStrong)
         {
             Signals[SignalCount].name = "SMC";
             Signals[SignalCount].signal = smcSignal.signal;
@@ -4346,10 +5014,10 @@ void CollectActiveSignals()
     }
 
     // Tambahkan sistem deteksi lainnya
-    if(UseSCMSignal)
+    if (UseSCMSignal)
     {
         SCMSignal scmSignal = DetectSCMSignalHighProb(SCM_BaseLot, SCM_EMAPeriod, SCM_RSIPeriod, SCM_RSI_OB, SCM_RSI_OS, SCM_MACD_Fast, SCM_MACD_Slow, SCM_MACD_Signal, SCM_ATRPeriod, SCM_ATRMultiplier);
-        if(scmSignal.signal != DIR_NONE && scmSignal.isStrong)
+        if (scmSignal.signal != DIR_NONE && scmSignal.isStrong)
         {
             Signals[SignalCount].name = "SCM";
             Signals[SignalCount].signal = scmSignal.signal;
@@ -4363,10 +5031,10 @@ void CollectActiveSignals()
         }
     }
 
-    if(UseStochastic)
+    if (UseStochastic)
     {
         StochSignal stochSignal = GetStochasticSignalUltimateAdvanced(Stoch_TFLow, Stoch_TFHigh, Stoch_KPeriod, Stoch_DPeriod, Stoch_Slowing, Stoch_EMAPeriod, Stoch_ATR_Multiplier, 0);
-        if(stochSignal.signal != DIR_NONE)
+        if (stochSignal.signal != DIR_NONE)
         {
             Signals[SignalCount].name = "Stochastic";
             Signals[SignalCount].signal = stochSignal.signal;
@@ -4388,47 +5056,48 @@ void UpdateChartLabels()
 {
     // Hapus label lama yang tidak relevan
     int totalObjects = ObjectsTotal(0, -1, OBJ_LABEL);
-    for(int i = totalObjects - 1; i >= 0; i--)
+    for (int i = totalObjects - 1; i >= 0; i--)
     {
         string objName = ObjectName(0, i, -1, OBJ_LABEL);
-        if(StringFind(objName, "SignalLabel_") >= 0)
+        if (StringFind(objName, "SignalLabel_") >= 0)
         {
             // Cek jika signal sudah tidak aktif
             bool signalStillActive = false;
-            for(int j = 0; j < SignalCount; j++)
+            for (int j = 0; j < SignalCount; j++)
             {
                 string expectedName = "SignalLabel_" + IntegerToString(j);
-                if(objName == expectedName)
+                if (objName == expectedName)
                 {
                     signalStillActive = true;
                     break;
                 }
             }
-            
-            if(!signalStillActive)
+
+            if (!signalStillActive)
                 ObjectDelete(0, objName);
         }
     }
 
     // Buat label baru untuk sinyal aktif
     int row = 0, col = 0;
-    for(int i = 0; i < SignalCount; i++)
+    for (int i = 0; i < SignalCount; i++)
     {
         SignalInfo sig = Signals[i];
-        if(sig.signal == DIR_NONE) continue;
+        if (sig.signal == DIR_NONE)
+            continue;
 
         string objName = "SignalLabel_" + IntegerToString(i);
         color labelColor = (sig.strength == STRONG ? clrLime : (sig.strength == MEDIUM ? clrOrange : clrYellow));
-        
+
         // Hapus object lama jika ada
-        if(ObjectFind(0, objName) >= 0)
+        if (ObjectFind(0, objName) >= 0)
             ObjectDelete(0, objName);
-        
+
         // Buat object baru
         ObjectCreate(0, objName, OBJ_LABEL, 0, 0, 0);
         int xPos = Dashboard_XBase + col * Dashboard_XStep;
         int yPos = Dashboard_YBase + row * Dashboard_YStep;
-        
+
         ObjectSetInteger(0, objName, OBJPROP_XDISTANCE, xPos);
         ObjectSetInteger(0, objName, OBJPROP_YDISTANCE, yPos);
         ObjectSetInteger(0, objName, OBJPROP_COLOR, labelColor);
@@ -4436,18 +5105,18 @@ void UpdateChartLabels()
         ObjectSetInteger(0, objName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
         ObjectSetInteger(0, objName, OBJPROP_BACK, false);
         ObjectSetInteger(0, objName, OBJPROP_SELECTABLE, false);
-        
-        string labelText = StringFormat("%s\n%s | Lot: %.2f\nSL: %.5f\nTP: %.5f", 
-            sig.name,
-            (sig.signal == DIR_BUY ? "BUY" : "SELL"), 
-            sig.lot, sig.sl, sig.tp);
-            
+
+        string labelText = StringFormat("%s\n%s | Lot: %.2f\nSL: %.5f\nTP: %.5f",
+                                        sig.name,
+                                        (sig.signal == DIR_BUY ? "BUY" : "SELL"),
+                                        sig.lot, sig.sl, sig.tp);
+
         ObjectSetString(0, objName, OBJPROP_TEXT, labelText);
         ObjectSetString(0, objName, OBJPROP_FONT, "Arial");
         ObjectSetInteger(0, objName, OBJPROP_ANCHOR, ANCHOR_LEFT_UPPER);
 
         col++;
-        if(col >= Dashboard_MaxColumns)
+        if (col >= Dashboard_MaxColumns)
         {
             col = 0;
             row++;
@@ -4455,81 +5124,181 @@ void UpdateChartLabels()
     }
 }
 
-
 //+------------------------------------------------------------------+
-//| Telegram Functions (FIXED & IMPROVED)                          |
+//| Telegram dengan Encoding yang Benar                           |
 //+------------------------------------------------------------------+
 void SendTelegramMessage(string message)
 {
-   if(!EnableTelegram) return;
+    if (!EnableTelegram)
+        return;
+    if (TelegramBotToken == "" || TelegramChatID == "")
+        return;
 
-   if(TelegramBotToken == "" || TelegramChatID == "")
-   {
-      Print("❌ Telegram not configured");
-      return;
-   }
+    string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendMessage";
+    string headers = "Content-Type: application/x-www-form-urlencoded";
 
-   // Encode pesan agar newline tidak error
-    string encodedMessage = message;
-    StringReplace(encodedMessage, "\n", "%0A");
+    // HANYA encode karakter yang menyebabkan masalah di URL
+    string encodedMessage = "";
+    for (int i = 0; i < StringLen(message); i++)
+    {
+        string ch = StringSubstr(message, i, 1);
+        int charCode = StringGetCharacter(ch, 0);
 
-    // Buat URL API Telegram
-    string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendMessage?chat_id=" + TelegramChatID + "&text=" + encodedMessage;
+        // Karakter yang perlu di-encode
+        if (ch == " ")
+            encodedMessage += "%20";
+        else if (ch == "\n")
+            encodedMessage += "%0A";
+        else if (ch == "&")
+            encodedMessage += "%26";
+        else if (ch == "#")
+            encodedMessage += "%23";
+        else if (ch == "%")
+            encodedMessage += "%25";
+        else if (ch == "+")
+            encodedMessage += "%2B";
+        else if (ch == "=")
+            encodedMessage += "%3D";
+        else if (ch == "?")
+            encodedMessage += "%3F";
+        else if (ch == "\"")
+            encodedMessage += "%22";
+        else if (ch == "<")
+            encodedMessage += "%3C";
+        else if (ch == ">")
+            encodedMessage += "%3E";
+        // Biarkan semua karakter lainnya TANPA diencode (termasuk emoji)
+        else
+            encodedMessage += ch;
+    }
 
-    // Persiapan request
-    char post[], result[];
-    string headers;
-    int res = WebRequest(
-    "GET",            // method
-    url,              // URL
-    "",               // headers (kosong)
-    5000,             // timeout ms
-    post,             // data yang dikirim (GET = kosong)
-    result,           // buffer hasil respon
-    headers           // response headers
-    );
+    string post_data = "chat_id=" + TelegramChatID + "&text=" + encodedMessage + "&parse_mode=Markdown";
 
-   if(res == -1)
-   {
-      Print("❌ Telegram WebRequest failed. Periksa izin URL di MT5 (Tools > Options > Expert Advisors).");
-      return;
-   }
+    char data[];
+    char result[];
+    string result_headers;
 
-   string response = CharArrayToString(result, 0, -1, CP_UTF8);
-   Print("📨 Telegram response: ", response);
+    StringToCharArray(post_data, data, 0, StringLen(post_data));
 
-   if(StringFind(response, "\"ok\":true") != -1)
-      Print("✅ Telegram message sent: ", message);
-   else
-      Print("⚠️ Telegram error: ", response);
+    ResetLastError();
+
+    int res = WebRequest("POST", url, headers, 10000, data, result, result_headers);
+
+    if (res == -1)
+    {
+        Print("❌ Telegram failed: ", GetLastError());
+        return;
+    }
+
+    string response = CharArrayToString(result);
+    if (StringFind(response, "\"ok\":true") != -1)
+    {
+        Print("✅ Telegram message sent successfully!");
+    }
+    else
+    {
+        Print("❌ Telegram API error: ", response);
+    }
 }
 
-// Fungsi bantu encode
+//+------------------------------------------------------------------+
+//| Fungsi bantu untuk error description                           |
+//+------------------------------------------------------------------+
+string GetWebRequestErrorDescription(int error_code)
+{
+    switch (error_code)
+    {
+    case 4014:
+        return "WebRequest not allowed - Check MT5 settings";
+    case 4016:
+        return "Invalid URL";
+    case 4026:
+        return "Cannot connect to server";
+    case 4024:
+        return "Request timeout";
+    case 4002:
+        return "URL too long - Use POST method instead";
+    case 4001:
+        return "Too many requests";
+    case 4003:
+        return "HTTP error";
+    default:
+        return "Unknown error (" + IntegerToString(error_code) + ")";
+    }
+}
+//+------------------------------------------------------------------+
+//| URL Encode FIXED untuk Telegram                                |
+//+------------------------------------------------------------------+
 string UrlEncode(string data)
 {
-   string res = "";
-   uchar arr[];
-   StringToCharArray(data, arr, 0, WHOLE_ARRAY, CP_UTF8);
+    string res = "";
+    uchar chars[];
 
-   for(int i = 0; i < ArraySize(arr); i++)
-   {
-      uchar c = arr[i];
-      if((c >= '0' && c <= '9') ||
-         (c >= 'A' && c <= 'Z') ||
-         (c >= 'a' && c <= 'z'))
-      {
-         res += (string)c;
-      }
-      else if(c == ' ')
-      {
-         res += "%20";
-      }
-      else
-      {
-         res += "%" + StringFormat("%02X", c);
-      }
-   }
-   return res;
+    // Convert string ke array UTF-8 bytes
+    int total = StringToCharArray(data, chars, 0, WHOLE_ARRAY, CP_UTF8);
+
+    for (int i = 0; i < total - 1; i++) // -1 untuk exclude null terminator
+    {
+        uchar c = chars[i];
+
+        // Karakter AMAN - tidak perlu encode
+        if ((c >= '0' && c <= '9') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            c == '-' || c == '_' || c == '.' || c == '~' ||
+            c == '!' || c == '*' || c == '(' || c == ')' ||
+            c == '\'')
+        {
+            res += CharToString(c);
+        }
+        // Spasi
+        else if (c == ' ')
+        {
+            res += "%20";
+        }
+        // Newline
+        else if (c == '\n')
+        {
+            res += "%0A";
+        }
+        // Karakter UTF-8 multi-byte (emoji, dll) - biarkan ASLI
+        else if (c >= 0x80) // Karakter UTF-8
+        {
+            res += CharToString(c);
+            // Handle multi-byte UTF-8 characters
+            if (c >= 0xC0) // 2-byte UTF-8
+            {
+                if (i + 1 < total - 1)
+                {
+                    res += CharToString(chars[++i]);
+                }
+            }
+            else if (c >= 0xE0) // 3-byte UTF-8
+            {
+                if (i + 2 < total - 1)
+                {
+                    res += CharToString(chars[++i]);
+                    res += CharToString(chars[++i]);
+                }
+            }
+            else if (c >= 0xF0) // 4-byte UTF-8
+            {
+                if (i + 3 < total - 1)
+                {
+                    res += CharToString(chars[++i]);
+                    res += CharToString(chars[++i]);
+                    res += CharToString(chars[++i]);
+                }
+            }
+        }
+        // Karakter lainnya - encode
+        else
+        {
+            res += "%" + StringFormat("%02X", c);
+        }
+    }
+
+    return res;
 }
 //+------------------------------------------------------------------+
 //| Alternative Telegram Method (Improved Fallback)                 |
@@ -4537,10 +5306,10 @@ string UrlEncode(string data)
 void SendTelegramAlternative(string message)
 {
     Print("🔄 Trying alternative Telegram method...");
-    
+
     // Method alternatif dengan format yang lebih sederhana
     string url = "https://api.telegram.org/bot" + TelegramBotToken + "/sendMessage";
-    
+
     // Simplify message untuk fallback (hapus emoji yang bermasalah)
     string simpleMessage = message;
     StringReplace(simpleMessage, "✨", "");
@@ -4560,25 +5329,25 @@ void SendTelegramAlternative(string message)
     StringReplace(simpleMessage, "📊", "===");
     StringReplace(simpleMessage, "🔥", "***");
     StringReplace(simpleMessage, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "==========================");
-    
+
     string headers = "Content-Type: application/x-www-form-urlencoded";
     char postData[];
     string post = "chat_id=" + TelegramChatID + "&text=" + simpleMessage + "&parse_mode=Markdown";
     StringToCharArray(post, postData, 0, StringLen(post));
-    
+
     ResetLastError();
     char result[];
     string resultHeaders;
     int response = WebRequest("POST", url, headers, 5000, postData, result, resultHeaders);
-    
-    if(response == 200)
+
+    if (response == 200)
     {
         Print("✅ Telegram: Alternative method successful");
     }
     else
     {
         Print("❌ Telegram Alternative also failed");
-        
+
         // Final fallback - print ke journal untuk debugging
         Print("=== FINAL TELEGRAM MESSAGE ===");
         Print(message);
@@ -4591,15 +5360,23 @@ void SendTelegramAlternative(string message)
 //+------------------------------------------------------------------+
 string GetErrorDescription(int errorCode)
 {
-    switch(errorCode)
+    switch (errorCode)
     {
-        case 0:    return "No error";
-        case 4014: return "WebRequest URL not allowed - Add 'https://api.telegram.org' to list in Tools->Options->Expert Advisors";
-        case 4060: return "WebRequest not allowed - Enable 'Allow WebRequest for listed URL' in Expert Advisor properties";
-        case 4016: return "No internet connection";
-        case 4017: return "Timeout exceeded";
-        case 5000: return "Empty response from server";
-        case 5001: return "Internal server error";
-        default:   return "Unknown error (" + IntegerToString(errorCode) + ")";
+    case 0:
+        return "No error";
+    case 4014:
+        return "WebRequest URL not allowed - Add 'https://api.telegram.org' to list in Tools->Options->Expert Advisors";
+    case 4060:
+        return "WebRequest not allowed - Enable 'Allow WebRequest for listed URL' in Expert Advisor properties";
+    case 4016:
+        return "No internet connection";
+    case 4017:
+        return "Timeout exceeded";
+    case 5000:
+        return "Empty response from server";
+    case 5001:
+        return "Internal server error";
+    default:
+        return "Unknown error (" + IntegerToString(errorCode) + ")";
     }
 }
