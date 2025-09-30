@@ -4130,8 +4130,8 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
 input bool UseStochastic = true;                 // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M5;   // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M15; // Timeframe tinggi untuk konfirmasi
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;   // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M30; // Timeframe tinggi untuk konfirmasi
 input int Stoch_KPeriod = 14;                    // %K period
 input int Stoch_DPeriod = 3;                     // %D period
 input int Stoch_Slowing = 3;                     // Slowing period
