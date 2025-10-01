@@ -443,7 +443,6 @@ namespace RiskManager
                 return false;
             }
         }
-
         return true;
     }
 
@@ -719,6 +718,90 @@ input bool EnableSadamTier = true; // Enable/Disable Sadam Tier
 input int Sadam_Priority = 3;      // Priority order (1=highest)
 //+------------------------------------------------------------------+
 
+// =========================================
+// GLOBAL OBJECTS
+// =========================================
+SignalEngine engine; // supaya state (history sinyal) tidak reset
+
+// =========================================
+// HYBRID EXECUTION FLOW
+// =========================================
+enum TierType
+{
+   TIER_ULTRA = 0,
+   TIER_SADAM,
+   TIER_POWER,
+   TIER_ENHANCED,
+   TIER_ADVANCED,
+   TIER_MOMENTUM
+};
+
+void ExecuteTradingFlow()
+{
+    bool tradeExecuted = false;
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Ultra Tier", TIER_ULTRA);
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Sadam Tier", TIER_SADAM);
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Power Tier", TIER_POWER);
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Enhanced Tier", TIER_ENHANCED);
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Advanced Tier", TIER_ADVANCED);
+
+    if (!tradeExecuted)
+        tradeExecuted = ExecuteTierWithFilter("Momentum Tier", TIER_MOMENTUM);
+
+    if (!tradeExecuted)
+        Print("ℹ️ No valid trade executed this cycle.");
+}
+
+bool ExecuteTierWithFilter(string tierName, TierType tier)
+{
+    bool tradeExecuted = false;
+
+    // Panggil fungsi sesuai tier
+    switch(tier)
+    {
+        case TIER_ULTRA:    tradeExecuted = ExecuteUltraTier1();     break;
+        case TIER_SADAM:    tradeExecuted = ExecuteSadamTier();      break;
+        case TIER_POWER:    tradeExecuted = ExecutePowerTier2();     break;
+        case TIER_ENHANCED: tradeExecuted = ExecuteEnhancedTier3();  break;
+        case TIER_ADVANCED: tradeExecuted = ExecuteAdvancedTier4();  break;
+        case TIER_MOMENTUM: tradeExecuted = ExecuteMomentumTier5();  break;
+    }
+
+    // Kalau ada trade, cek filter SignalEngine
+    if (tradeExecuted)
+    {
+        Dir confirmDir;
+        double confidence;
+
+        if (!engine.GetConsensusSignal(confirmDir, confidence))
+        {
+            PrintFormat("⚠️ %s blocked - SignalEngine skip (News/OB active)", tierName);
+            return false;
+        }
+
+        if (confidence < 0.6)
+        {
+            PrintFormat("❌ %s blocked by SignalEngine (confidence=%.2f)", tierName, confidence);
+            return false;
+        }
+
+        PrintFormat("✅ %s confirmed by SignalEngine (confidence=%.2f)", tierName, confidence);
+    }
+
+    return tradeExecuted;
+}
+
+
 void OnTick()
 {
     // ==================== ADVANCED RISK MANAGEMENT ====================
@@ -737,6 +820,9 @@ void OnTick()
     // ==================== POSITION LIMIT CHECK ====================
     if (PositionsTotal() >= 30)
         return;
+
+    // Eksekusi hybrid trading flow
+    ExecuteTradingFlow();
 
     // Tier 1: Ultra Tier (Highest Priority)
     if (!tradeExecuted)
@@ -1559,20 +1645,24 @@ void ExecuteBackupSystem()
 void ManageAdvancedRisk()
 {
     static datetime lastRiskCheck = 0;
-    if (TimeCurrent() - lastRiskCheck >= 2)
+    if (TimeCurrent() - lastRiskCheck >= 1)
     {
         ManageTrailingBreakCloseUltimate();
 
+        static bool riskAlertSent = false;
         if (!RiskManager::CanOpenTrade())
         {
-            Print("⚠️ RISK MANAGEMENT: Trading suspended");
-            if (Dashboard_SendTelegram)
+            if (!riskAlertSent)
             {
-                string riskMsg = "🚨 *RISK MANAGEMENT ALERT* 🚨\n";
-                riskMsg += "Trading suspended due to risk limits!";
-                SendTelegramMessage(riskMsg);
+                SendTelegramMessage("🚨 RISK MANAGEMENT ALERT 🚨\nTrading suspended!");
+                riskAlertSent = true;
             }
         }
+        else
+        {
+            riskAlertSent = false; // reset kalau kondisi sudah normal
+        }
+
         lastRiskCheck = TimeCurrent();
     }
 }
@@ -1594,14 +1684,12 @@ void ManageTrailingBreakCloseUltimate()
     {
         if (PositionGetTicket(i))
         {
-            ulong ticket       = PositionGetInteger(POSITION_TICKET);
-            long type          = PositionGetInteger(POSITION_TYPE);
-            double entry       = PositionGetDouble(POSITION_PRICE_OPEN);
-            double currentSL   = PositionGetDouble(POSITION_SL);
-            double currentTP   = PositionGetDouble(POSITION_TP);
-            double price       = (type == POSITION_TYPE_BUY) ? 
-                                  SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
-                                  SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+            ulong ticket = PositionGetInteger(POSITION_TICKET);
+            long type = PositionGetInteger(POSITION_TYPE);
+            double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+            double currentSL = PositionGetDouble(POSITION_SL);
+            double currentTP = PositionGetDouble(POSITION_TP);
+            double price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
             // Hitung profit dalam pips
             double profitPips = 0;
