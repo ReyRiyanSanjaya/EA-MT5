@@ -1408,8 +1408,8 @@ bool ExecuteEnhancedTier3()
     {
         StochSignal stochSignal = GetStochasticSignalUltimateAdvanced(Stoch_TFLow, Stoch_TFHigh, Stoch_KPeriod, Stoch_DPeriod, Stoch_Slowing, Stoch_EMAPeriod, Stoch_ATR_Multiplier, 0);
 
-        if (stochSignal.signal != DIR_NONE || stochSignal.isStrong ||
-            IsStochasticPower(stochSignal) || IsSignalInTrend(stochSignal.signal) || HasVolumeConfirmation())
+        if ((stochSignal.signal != DIR_NONE && stochSignal.isStrong &&
+            IsStochasticPower(stochSignal)) || IsSignalInTrend(stochSignal.signal) || HasVolumeConfirmation())
         {
             double stochLot = RiskManager::GetDynamicLot(0.6,
                                                          (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10));
