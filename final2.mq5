@@ -838,6 +838,14 @@ void OnTick()
     // if (!AdvancedProfitFilter())
     //     return;
 
+        // ==================== ANALISIS SEMUA TIER SECARA BERURUTAN ====================
+    bool tradeExecuted = true;
+
+    // Backup System (Lowest Priority)
+    if (!tradeExecuted)
+    {
+        ExecuteBackupSystem();
+    }    
     // ==================== ENTRY COOLDOWN CHECK ====================
     if (TimeCurrent() - lastTradeTime < minSecondsBetweenTrades)
         return;
@@ -845,9 +853,6 @@ void OnTick()
     // ==================== POSITION LIMIT CHECK ====================
     if (PositionsTotal() >= 30)
         return;
-
-    // ==================== ANALISIS SEMUA TIER SECARA BERURUTAN ====================
-    bool tradeExecuted = false;
     
     // Tier 1: Ultra Tier (Highest Priority)
     if (!tradeExecuted)
@@ -885,11 +890,6 @@ void OnTick()
         tradeExecuted = ExecuteMomentumTier5();
     }
     
-    // Backup System (Lowest Priority)
-    if (!tradeExecuted)
-    {
-        ExecuteBackupSystem();
-    }    
     // ==================== DASHBOARD UPDATE ====================
     static datetime lastDashboardCheck = 0;
     static int lastTicketCount = 0;
@@ -4593,8 +4593,8 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
 input bool UseStochastic = true;                 // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;  // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M30; // Timeframe tinggi untuk konfirmasi
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_H1;  // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_H4; // Timeframe tinggi untuk konfirmasi
 input int Stoch_KPeriod = 14;                    // %K period
 input int Stoch_DPeriod = 3;                     // %D period
 input int Stoch_Slowing = 3;                     // Slowing period
