@@ -118,7 +118,7 @@ private:
 public:
     SignalEngine() : signalCount(0), totalConfidence(0), lastDirection(DIR_NONE) {}
 
-    bool GetConsensusSignal(Dir &direction, double &confidence)
+    bool GetConsensusSignal(Dir &direction, double &confidence, string &signalSource)
     {
         // Skip signal generation selama news period untuk avoid conflict
         if (UseNewsImpact && IsNewsPeriod())
@@ -156,7 +156,6 @@ public:
         // Prioritaskan sinyal berdasarkan urutan prioritas
         Dir finalDirection = DIR_NONE;
         double baseConfidence = 0.0;
-        string signalSource = "None";
 
         // 1. Priority: Momentum Pullback (Highest)
         if (hasPullbackSignal && pullbackSignal.found)
@@ -214,6 +213,7 @@ public:
         direction = finalDirection;
         confidence = finalConfidence;
         lastDirection = direction;
+        signalSource = signalSource;
 
         PrintFormat("Signal Engine: %s signal with %.2f confidence (Source:%s, Momentum:%s, Pattern:%s, Macro:%s)",
                     (direction == DIR_BUY ? "BUY" : (direction == DIR_SELL ? "SELL" : "NONE")),
@@ -300,9 +300,7 @@ namespace RiskManager
         double balance = GetBalance();
         double riskMoney = balance * (RiskPercent / 100.0);
         double pipValue = GetPipValue(symbol);
-        if (pipValue <= 0)
-            pipValue = 0.0001;
-
+        if (pipValue <= 0) pipValue = 0.0001;
         double lot = riskMoney / (stopLossPips * pipValue);
         return NormalizeDouble(lot, 2);
     }
@@ -310,148 +308,132 @@ namespace RiskManager
     // --- Hitung lot dinamis dari confidence + risk ---
     double GetDynamicLot(double confidence, double stopLossPips = 50, string symbol = NULL, bool isPremiumSignal = false)
     {
-        if (symbol == NULL)
-            symbol = _Symbol;
+        if (symbol == NULL) symbol = _Symbol;
 
-        // --- Tentukan Max Lot berdasarkan jenis sinyal ---
         double actualMaxLot = MaxLot;
         if (isPremiumSignal)
         {
-            // Untuk sinyal premium, gunakan MaxLot yang lebih besar
             actualMaxLot = MaxLot * 3.0; // 3x dari normal
             Print("PREMIUM SIGNAL: Using enhanced MaxLot = ", actualMaxLot);
         }
 
-        // Hitung lot dari confidence
         double lotFromConfidence = BaseLot + (actualMaxLot - BaseLot) * confidence;
-
-        // Hitung lot dari risk %
         double lotByRisk = CalculateLotByRisk(stopLossPips, symbol);
-
-        // Ambil lot terkecil (biar aman)
         double lot = MathMin(lotFromConfidence, lotByRisk);
 
-        // --- Validasi margin ---
         double freeMargin = GetFreeMargin();
         double marginReq = 0.0;
         if (!OrderCalcMargin(ORDER_TYPE_BUY, symbol, lot, SymbolInfoDouble(symbol, SYMBOL_ASK), marginReq))
             marginReq = 0;
 
-        if (marginReq > freeMargin * 0.8) // Gunakan 80% free margin maksimal
-        {
-            // Turunkan lot biar cukup margin
+        if (marginReq > freeMargin * 0.8)
             lot = (freeMargin * 0.8 / marginReq) * lot;
-            Print("Margin adjusted lot: ", lot);
-        }
 
-        // --- Batasi dengan actualMaxLot ---
         lot = MathMin(lot, actualMaxLot);
-        lot = MathMax(lot, BaseLot); // Minimal base lot
+        lot = MathMax(lot, BaseLot);
 
         return NormalizeDouble(lot, 2);
     }
 
-    // --- Hitung lot untuk sinyal sangat bagus (Ultra/High Confidence) ---
+    // --- Hitung lot untuk sinyal premium (confidence tinggi) ---
     double GetPremiumLot(double confidence, double stopLossPips = 50, string symbol = NULL)
     {
-        if (symbol == NULL)
-            symbol = _Symbol;
-
-        // Hanya untuk confidence tinggi (minimal 0.8)
+        if (symbol == NULL) symbol = _Symbol;
         if (confidence < 0.8)
-        {
-            Print("Premium lot requires confidence >= 0.8, current: ", confidence);
             return GetDynamicLot(confidence, stopLossPips, symbol, false);
-        }
 
-        // Gunakan risk lebih tinggi untuk sinyal premium
-        double premiumRiskPercent = RiskPercent * 20.0; // 2x risk normal
+        double premiumRiskPercent = RiskPercent * 2.0; // 2x risk normal
         double balance = GetBalance();
         double riskMoney = balance * (premiumRiskPercent / 100.0);
         double pipValue = GetPipValue(symbol);
-        if (pipValue <= 0)
-            pipValue = 0.0001;
+        if (pipValue <= 0) pipValue = 0.0001;
 
         double premiumLot = riskMoney / (stopLossPips * pipValue);
-
-        // Batasan maksimal untuk premium lot
-        double premiumMaxLot = MaxLot * 20.0; // 20x dari normal
+        double premiumMaxLot = MaxLot * 20.0; // batas maksimal premium
         premiumLot = MathMin(premiumLot, premiumMaxLot);
 
-        // Validasi margin untuk premium lot
         double freeMargin = GetFreeMargin();
         double marginReq = 0.0;
         if (!OrderCalcMargin(ORDER_TYPE_BUY, symbol, premiumLot, SymbolInfoDouble(symbol, SYMBOL_ASK), marginReq))
             marginReq = 0;
 
-        if (marginReq > freeMargin * 0.7) // Batas lebih ketat untuk premium (70%)
-        {
+        if (marginReq > freeMargin * 0.7)
             premiumLot = (freeMargin * 0.7 / marginReq) * premiumLot;
-            Print("Premium lot adjusted due to margin: ", premiumLot);
-        }
 
         premiumLot = MathMax(premiumLot, BaseLot);
         Print("PREMIUM LOT ACTIVATED: ", premiumLot, " (Confidence: ", confidence, ")");
-
         return NormalizeDouble(premiumLot, 2);
     }
 
     // --- Cek apakah boleh entry ---
     bool CanOpenTrade(bool isPremiumTrade = false)
     {
-        // Cek margin level (lebih ketat untuk premium trade)
         double marginLevel = GetMarginLevel();
         double minMarginLevel = isPremiumTrade ? 300.0 : 200.0;
-
         if (marginLevel > 0 && marginLevel < minMarginLevel)
         {
             Print("Margin level too low: ", marginLevel, " (Required: ", minMarginLevel, ")");
             return false;
         }
 
-        // Cek spread (lebih ketat untuk premium trade)
-        double spread = (double)(SymbolInfoInteger(_Symbol, SYMBOL_SPREAD));
+        double spread = (double)SymbolInfoInteger(_Symbol, SYMBOL_SPREAD);
         double maxAllowedSpread = isPremiumTrade ? MaxSpread * 0.7 : MaxSpread;
-
         if (spread > maxAllowedSpread)
         {
             Print("Spread too high: ", spread, " (Max: ", maxAllowedSpread, ")");
             return false;
         }
 
-        // Cek max drawdown harian (lebih ketat untuk premium trade)
         static double equityStart = GetEquity();
         double currentEquity = GetEquity();
         double ddPercent = ((equityStart - currentEquity) / equityStart) * 100.0;
         double maxAllowedDD = isPremiumTrade ? MaxDailyDD * 0.5 : MaxDailyDD;
-
         if (ddPercent > maxAllowedDD)
         {
             Print("Daily drawdown limit reached: ", ddPercent, " (Max: ", maxAllowedDD, ")");
             return false;
         }
 
-        // Cek tambahan untuk premium trade
         if (isPremiumTrade)
         {
-            // Pastikan free margin cukup untuk lot besar
             double freeMargin = GetFreeMargin();
             double balance = GetBalance();
-            if (freeMargin < balance * 0.3) // Minimal 30% balance sebagai free margin
+            if (freeMargin < balance * 0.3)
             {
                 Print("Insufficient free margin for premium trade: ", freeMargin);
                 return false;
             }
         }
+
         return true;
     }
 
-    // --- Cek khusus untuk sinyal premium ---
-    bool CanOpenPremiumTrade()
+    bool CanOpenPremiumTrade() { return CanOpenTrade(true); }
+
+    // --- Fungsi baru: ambil MaxLot yang aman (integrasi OB Strong / Premium) ---
+    double GetMaxLot()
     {
-        return CanOpenTrade(true);
+        double stopLossPips = 50.0; // default stop loss
+        double lotByRisk = CalculateLotByRisk(stopLossPips);
+        double freeMargin = GetFreeMargin();
+        double marginReq = 0.0;
+        if (!OrderCalcMargin(ORDER_TYPE_BUY, _Symbol, lotByRisk, SymbolInfoDouble(_Symbol, SYMBOL_ASK), marginReq))
+            marginReq = 0;
+
+        if (marginReq > freeMargin * 0.8)
+            lotByRisk = (freeMargin * 0.8 / marginReq) * lotByRisk;
+
+        lotByRisk = MathMin(lotByRisk, MaxLot);
+        lotByRisk = MathMax(lotByRisk, BaseLot);
+
+        // Sesuaikan step broker
+        double lotStep = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+        lotByRisk = MathFloor(lotByRisk / lotStep) * lotStep;
+
+        return NormalizeDouble(lotByRisk, 2);
     }
 }
+
 //+------------------------------------------------------------------+
 //| Trading Functions (FIXED - SL lebih longgar)                   |
 //+------------------------------------------------------------------+
@@ -556,9 +538,10 @@ void ExecuteTradeFromSignals()
 {
     Dir direction;
     double confidence;
+    string signalSource;
 
     // Ambil sinyal konsensus dari SignalEngine
-    if (!signalEngine.GetConsensusSignal(direction, confidence))
+    if (!signalEngine.GetConsensusSignal(direction, confidence, signalSource))
         return; // tidak ada sinyal
 
     // ✅ Cek proteksi RiskManager sebelum entry
@@ -574,12 +557,12 @@ void ExecuteTradeFromSignals()
     // Entry BUY / SELL sesuai sinyal
     if (direction == DIR_BUY)
     {
-        string signalSource = "Entry BUY / SELL sesuai sinyal";
+        // string signalSource = "Entry BUY / SELL sesuai sinyal";
         ExecuteBuy(lotSize, SL_Pips, TP_Pips, signalSource);
     }
     else if (direction == DIR_SELL)
     {
-        string signalSource = "Entry BUY / SELL sesuai sinyal";
+        // string signalSource = "Entry BUY / SELL sesuai sinyal";
         ExecuteSell(lotSize, SL_Pips, TP_Pips, signalSource);
     }
 }
@@ -688,7 +671,7 @@ SignalEngine signalEngine; // Instance SignalEngine
 
 // Tambahkan variabel global untuk tracking waktu entry
 datetime lastTradeTime = 0;
-int minSecondsBetweenTrades = 0; // Minimal 60 detik antara trade
+int minSecondsBetweenTrades = 1; // Minimal 60 detik antara trade
 
 // Fungsi untuk MQL5 - menghitung position yang sesuai
 int GetCurrentTicketCount()
@@ -728,12 +711,12 @@ SignalEngine engine; // supaya state (history sinyal) tidak reset
 // =========================================
 enum TierType
 {
-   TIER_ULTRA = 0,
-   TIER_SADAM,
-   TIER_POWER,
-   TIER_ENHANCED,
-   TIER_ADVANCED,
-   TIER_MOMENTUM
+    TIER_ULTRA = 0,
+    TIER_SADAM,
+    TIER_POWER,
+    TIER_ENHANCED,
+    TIER_ADVANCED,
+    TIER_MOMENTUM
 };
 
 void ExecuteTradingFlow()
@@ -767,14 +750,26 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
     bool tradeExecuted = false;
 
     // Panggil fungsi sesuai tier
-    switch(tier)
+    switch (tier)
     {
-        case TIER_ULTRA:    tradeExecuted = ExecuteUltraTier1();     break;
-        case TIER_SADAM:    tradeExecuted = ExecuteSadamTier();      break;
-        case TIER_POWER:    tradeExecuted = ExecutePowerTier2();     break;
-        case TIER_ENHANCED: tradeExecuted = ExecuteEnhancedTier3();  break;
-        case TIER_ADVANCED: tradeExecuted = ExecuteAdvancedTier4();  break;
-        case TIER_MOMENTUM: tradeExecuted = ExecuteMomentumTier5();  break;
+    case TIER_ULTRA:
+        tradeExecuted = ExecuteUltraTier1();
+        break;
+    case TIER_SADAM:
+        tradeExecuted = ExecuteSadamTier();
+        break;
+    case TIER_POWER:
+        tradeExecuted = ExecutePowerTier2();
+        break;
+    case TIER_ENHANCED:
+        tradeExecuted = ExecuteEnhancedTier3();
+        break;
+    case TIER_ADVANCED:
+        tradeExecuted = ExecuteAdvancedTier4();
+        break;
+    case TIER_MOMENTUM:
+        tradeExecuted = ExecuteMomentumTier5();
+        break;
     }
 
     // Kalau ada trade, cek filter SignalEngine
@@ -782,8 +777,9 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
     {
         Dir confirmDir;
         double confidence;
+        string signalSource;
 
-        if (!engine.GetConsensusSignal(confirmDir, confidence))
+        if (!engine.GetConsensusSignal(confirmDir, confidence, signalSource))
         {
             PrintFormat("⚠️ %s blocked - SignalEngine skip (News/OB active)", tierName);
             return false;
@@ -800,7 +796,6 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
 
     return tradeExecuted;
 }
-
 
 void OnTick()
 {
@@ -821,44 +816,49 @@ void OnTick()
     if (PositionsTotal() >= 30)
         return;
 
+    // --- OB Signal Override System ---
+    OBSignal obSig = DetectOrderBlockPro(0.01, 50, 50, 3, 10, 20, true);
+    if (obSig.signal != DIR_NONE)
+    {
+        double lot = obSig.lotSize;
+
+        // OB Strong = premium trade
+        bool isPremiumTrade = obSig.isStrong;
+
+        // Cek Risk Manager
+        if (!RiskManager::CanOpenTrade(isPremiumTrade))
+        {
+            // Strong override: jika isStrong=true, sesuaikan lot agar aman
+            if (obSig.isStrong)
+            {
+                lot = MathMin(lot, RiskManager::GetMaxLot());
+                if (!RiskManager::CanOpenTrade(isPremiumTrade))
+                {
+                    Print("⚠️ Strong OB signal blocked by RiskManager");
+                    obSig.signal = DIR_NONE;
+                }
+            }
+            else
+            {
+                obSig.signal = DIR_NONE;
+            }
+        }
+
+        // Eksekusi OB Signal jika lolos proteksi
+        if (obSig.signal == DIR_BUY)
+        {
+            ExecuteBuy(lot, (int)obSig.stopLoss, (int)obSig.takeProfit, "OB Strong BUY");
+            tradeExecuted = true;
+        }
+        else if (obSig.signal == DIR_SELL)
+        {
+            ExecuteSell(lot, (int)obSig.stopLoss, (int)obSig.takeProfit, "OB Strong SELL");
+            tradeExecuted = true;
+        }
+    }
+
     // Eksekusi hybrid trading flow
     ExecuteTradingFlow();
-
-    // Tier 1: Ultra Tier (Highest Priority)
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecuteUltraTier1();
-    }
-
-    // Tier 2: Sadam Tier (High Priority)
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecuteSadamTier();
-    }
-
-    // Tier 3: Power Tier
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecutePowerTier2();
-    }
-
-    // Tier 4: Enhanced Tier
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecuteEnhancedTier3();
-    }
-
-    // Tier 5: Advanced Tier
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecuteAdvancedTier4();
-    }
-
-    // Tier 6: Momentum Tier
-    if (!tradeExecuted)
-    {
-        tradeExecuted = ExecuteMomentumTier5();
-    }
 
     // ==================== DASHBOARD UPDATE ====================
     static datetime lastDashboardCheck = 0;
@@ -3842,7 +3842,13 @@ Dir GetTrendEMA(ENUM_TIMEFRAMES tf, int emaPeriod)
 //==================================================================
 // Fungsi deteksi OB multi-level + scaling lot (Probabilitas ~80%+)
 //==================================================================
-OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 50, int levels = 3, double zoneBufferPips = 10, int lookback = 20)
+OBSignal DetectOrderBlockPro(double baseLot = 0.01,
+                             int emaM1 = 50,
+                             int emaM5 = 50,
+                             int levels = 3,
+                             double zoneBufferPips = 10,
+                             int lookback = 20,
+                             bool allowStrongOverride = true)
 {
     OBSignal sig;
     sig.signal = DIR_NONE;
@@ -3852,7 +3858,7 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 
     sig.lotSize = baseLot;
     sig.isStrong = false;
 
-    double hiMax = 0, loMin = 0;
+    double hiMax = 0, loMin = DBL_MAX;
     int idxHi = -1, idxLo = -1;
 
     // Cari High & Low lookback candle terakhir di TF1
@@ -3865,7 +3871,7 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 
             hiMax = hi;
             idxHi = i;
         }
-        if (lo < loMin || loMin == 0)
+        if (lo < loMin)
         {
             loMin = lo;
             idxLo = i;
@@ -3874,19 +3880,22 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 
 
     double supply = hiMax;
     double demand = loMin;
-    double spread = _Point * zoneBufferPips * 10; // Convert pips to points
+
+    if (supply <= demand || supply == 0 || demand == 0)
+        return sig;
+
+    // Spread sebagai buffer, sesuaikan dengan symbol digit
+    double pointSize = _Point;
+    double spread = zoneBufferPips * pointSize;
 
     // Trend filter multi-TF
     Dir trendTF1 = GetTrendEMA(OB_TF1, emaM1);
     Dir trendTF2 = GetTrendEMA(OB_TF2, emaM5);
 
-    double price = iClose(_Symbol, OB_TF1, 0);
+    // Ambil harga real-time sesuai arah
+    double price = (trendTF1 == DIR_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                                         : SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
-    // Validasi zona OB
-    if (supply <= demand || supply == 0 || demand == 0)
-        return sig;
-
-    // Tentukan multi-level zona OB
     double levelStep = (supply - demand) / levels;
 
     //==== BUY Multi-level OB ====
@@ -3895,15 +3904,24 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 
         for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = demand + lvl * levelStep;
-            if (price <= levelPrice + spread && price >= levelPrice - spread)
+            if (price >= levelPrice - spread && price <= levelPrice + spread)
             {
                 sig.signal = DIR_BUY;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-                sig.stopLoss = demand - _Point * 5;
-                sig.takeProfit = supply;     // full zona OB
-                sig.lotSize = baseLot * lvl; // scaling lot sesuai level
-                sig.isStrong = (lvl == 1);   // strongest di level 1
-                break;                       // ambil level pertama yang valid
+                sig.stopLoss = demand - pointSize * 5;
+                sig.takeProfit = supply;
+                sig.lotSize = baseLot * lvl;
+                sig.isStrong = (lvl == 1);
+
+                // Proteksi tambahan: override jika isStrong dan diizinkan
+                if (sig.isStrong && allowStrongOverride)
+                {
+                    double maxAllowedLot = RiskManager::GetMaxLot();
+                    if (sig.lotSize > maxAllowedLot)
+                        sig.lotSize = maxAllowedLot; // tetap aman
+                }
+
+                break;
             }
         }
     }
@@ -3914,15 +3932,24 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01, int emaM1 = 50, int emaM5 = 
         for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = supply - lvl * levelStep;
-            if (price >= levelPrice - spread && price <= levelPrice + spread)
+            if (price <= levelPrice + spread && price >= levelPrice - spread)
             {
                 sig.signal = DIR_SELL;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-                sig.stopLoss = supply + _Point * 5;
-                sig.takeProfit = demand;     // full zona OB
-                sig.lotSize = baseLot * lvl; // scaling lot sesuai level
-                sig.isStrong = (lvl == 1);   // strongest di level 1
-                break;                       // ambil level pertama yang valid
+                sig.stopLoss = supply + pointSize * 5;
+                sig.takeProfit = demand;
+                sig.lotSize = baseLot * lvl;
+                sig.isStrong = (lvl == 1);
+
+                // Proteksi tambahan: override jika isStrong dan diizinkan
+                if (sig.isStrong && allowStrongOverride)
+                {
+                    double maxAllowedLot = RiskManager::GetMaxLot();
+                    if (sig.lotSize > maxAllowedLot)
+                        sig.lotSize = maxAllowedLot; // tetap aman
+                }
+
+                break;
             }
         }
     }
@@ -4724,8 +4751,8 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
 input bool UseStochastic = true;                // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M1;  // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M5; // Timeframe tinggi untuk konfirmasi
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;  // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_H1; // Timeframe tinggi untuk konfirmasi
 input int Stoch_KPeriod = 14;                   // %K period
 input int Stoch_DPeriod = 3;                    // %D period
 input int Stoch_Slowing = 3;                    // Slowing period
@@ -4743,7 +4770,7 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
                                                 int dPeriod = 3,
                                                 int slowing = 3,
                                                 int emaPeriod = 50,
-                                                double atrMultiplier = 1.5,
+                                                double atrMultiplier = 2.5,
                                                 int shift = 0)
 {
     StochSignal sig;
