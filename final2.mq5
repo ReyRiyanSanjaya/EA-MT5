@@ -849,6 +849,8 @@ void OnTick()
     if (PositionsTotal() >= 30)
         return;
 
+    LuxAlgoTrendLinesWithBreak();
+
     // ==================== PBX HYBRID FLOW ====================
     ExecutePBXHybridFlow(); // hanya jalan kalau PBX valid
 
