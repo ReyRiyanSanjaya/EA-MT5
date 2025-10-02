@@ -300,7 +300,8 @@ namespace RiskManager
         double balance = GetBalance();
         double riskMoney = balance * (RiskPercent / 100.0);
         double pipValue = GetPipValue(symbol);
-        if (pipValue <= 0) pipValue = 0.0001;
+        if (pipValue <= 0)
+            pipValue = 0.0001;
         double lot = riskMoney / (stopLossPips * pipValue);
         return NormalizeDouble(lot, 2);
     }
@@ -308,7 +309,8 @@ namespace RiskManager
     // --- Hitung lot dinamis dari confidence + risk ---
     double GetDynamicLot(double confidence, double stopLossPips = 50, string symbol = NULL, bool isPremiumSignal = false)
     {
-        if (symbol == NULL) symbol = _Symbol;
+        if (symbol == NULL)
+            symbol = _Symbol;
 
         double actualMaxLot = MaxLot;
         if (isPremiumSignal)
@@ -338,7 +340,8 @@ namespace RiskManager
     // --- Hitung lot untuk sinyal premium (confidence tinggi) ---
     double GetPremiumLot(double confidence, double stopLossPips = 50, string symbol = NULL)
     {
-        if (symbol == NULL) symbol = _Symbol;
+        if (symbol == NULL)
+            symbol = _Symbol;
         if (confidence < 0.8)
             return GetDynamicLot(confidence, stopLossPips, symbol, false);
 
@@ -346,7 +349,8 @@ namespace RiskManager
         double balance = GetBalance();
         double riskMoney = balance * (premiumRiskPercent / 100.0);
         double pipValue = GetPipValue(symbol);
-        if (pipValue <= 0) pipValue = 0.0001;
+        if (pipValue <= 0)
+            pipValue = 0.0001;
 
         double premiumLot = riskMoney / (stopLossPips * pipValue);
         double premiumMaxLot = MaxLot * 20.0; // batas maksimal premium
@@ -745,11 +749,12 @@ void ExecuteTradingFlow()
         Print("ℹ️ No valid trade executed this cycle.");
 }
 
+// =================== Integrasi PBX ke Tier ===================
 bool ExecuteTierWithFilter(string tierName, TierType tier)
 {
     bool tradeExecuted = false;
 
-    // Panggil fungsi sesuai tier
+    // Panggil fungsi tier asli (entry logic dasar)
     switch (tier)
     {
     case TIER_ULTRA:
@@ -772,9 +777,17 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
         break;
     }
 
-    // Kalau ada trade, cek filter SignalEngine
+    // =================== PBX Pullback Filter ===================
     if (tradeExecuted)
     {
+        PBX_SignalResult pbxSignal = PBX_DetectSignal(); // fungsi PBX canggih kita
+        if (pbxSignal.signal == PBX_NONE)
+        {
+            PrintFormat("⚠️ %s blocked - No valid PBX pullback signal", tierName);
+            return false;
+        }
+
+        // =================== SignalEngine Filter ===================
         Dir confirmDir;
         double confidence;
         string signalSource;
@@ -791,7 +804,27 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
             return false;
         }
 
-        PrintFormat("✅ %s confirmed by SignalEngine (confidence=%.2f)", tierName, confidence);
+        PrintFormat("✅ %s confirmed by SignalEngine & PBX (confidence=%.2f)", tierName, confidence);
+
+        // =================== Setup SL + TP ===================
+        double entryPrice = pbxSignal.entry;
+        double slPips = MathMax((pbxSignal.signal == PBX_BUY)
+                                    ? (entryPrice - pbxSignal.sl) / _Point
+                                    : (pbxSignal.sl - entryPrice) / _Point,
+                                50);                // minimal 50 pips
+        double tpPips = MathMax(slPips * 1.5, 100); // minimal RR 1:1.5 / 100 pips
+
+        // =================== Order Placement ===================
+        if (pbxSignal.signal == PBX_BUY)
+        {
+            ExecuteBuy(1.0, (int)slPips, (int)tpPips, tierName + " PBX BUY");
+            tradeExecuted = true;
+        }
+        else if (pbxSignal.signal == PBX_SELL)
+        {
+            ExecuteSell(1.0, (int)slPips, (int)tpPips, tierName + " PBX SELL");
+            tradeExecuted = true;
+        }
     }
 
     return tradeExecuted;
@@ -815,6 +848,9 @@ void OnTick()
     // ==================== POSITION LIMIT CHECK ====================
     if (PositionsTotal() >= 30)
         return;
+
+    // ==================== PBX HYBRID FLOW ====================
+    ExecutePBXHybridFlow(); // hanya jalan kalau PBX valid
 
     // --- OB Signal Override System ---
     OBSignal obSig = DetectOrderBlockPro(0.01, 50, 50, 3, 10, 20, true);
@@ -885,6 +921,48 @@ void OnTick()
         ExecuteBackupSystem();
     }
 }
+
+// ==================== PBX HYBRID FLOW ====================
+void ExecutePBXHybridFlow()
+{
+    PBX_SignalResult pbxSignal = PBX_DetectSignal();
+
+    // Hanya jalankan hybrid flow kalau PBX valid
+    if (pbxSignal.signal == PBX_NONE)
+    {
+        Print("⚠️ PBX Hybrid Flow blocked - No valid pullback signal");
+        return;
+    }
+
+    // Jalankan semua tier secara berurutan
+    ExecuteTradingFlow();
+
+    // ==================== TRAILING SL / BREAK EVEN ====================
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if (!PositionSelectByTicket(ticket))
+            continue;
+
+        double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+        double currentSL = PositionGetDouble(POSITION_SL);
+        int dir = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? PBX_BUY : PBX_SELL;
+
+        double newSL = PBX_ManageSL(
+            openPrice,
+            (dir == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                             : SymbolInfoDouble(_Symbol, SYMBOL_ASK),
+            currentSL,
+            dir);
+
+        if (newSL != currentSL)
+        {
+            // Update SL order
+            PBX_TrailingSLHandler();
+        }
+    }
+}
+
 //+------------------------------------------------------------------+
 //| Input Parameters - SADAM SYSTEM                                 |
 //+------------------------------------------------------------------+
@@ -4750,15 +4828,15 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //+------------------------------------------------------------------+
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
-input bool UseStochastic = true;                // Aktifkan stochastic detection
+input bool UseStochastic = true;                 // Aktifkan stochastic detection
 input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;  // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_H1; // Timeframe tinggi untuk konfirmasi
-input int Stoch_KPeriod = 14;                   // %K period
-input int Stoch_DPeriod = 3;                    // %D period
-input int Stoch_Slowing = 3;                    // Slowing period
-input int Stoch_EMAPeriod = 50;                 // EMA period untuk trend filter
-input double Stoch_ATR_Multiplier = 1.5;        // ATR multiplier untuk SL
-input double Stoch_TrailFactor = 1.0;           // Trailing stop factor
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M30; // Timeframe tinggi untuk konfirmasi
+input int Stoch_KPeriod = 14;                    // %K period
+input int Stoch_DPeriod = 3;                     // %D period
+input int Stoch_Slowing = 3;                     // Slowing period
+input int Stoch_EMAPeriod = 50;                  // EMA period untuk trend filter
+input double Stoch_ATR_Multiplier = 1.5;         // ATR multiplier untuk SL
+input double Stoch_TrailFactor = 1.0;            // Trailing stop factor
 
 //==================================================================
 // Fungsi Stochastic Ultimate Advanced (Multi-TF + Trend Filter + ATR SL/TP)
@@ -6015,4 +6093,488 @@ string GetErrorDescription(int errorCode)
     default:
         return "Unknown error (" + IntegerToString(errorCode) + ")";
     }
+}
+
+//+------------------------------------------------------------------+
+//| PullbackX.mq5                                                    |
+//| Advanced Pullback Strategy: Engulfing + PinBar + Fibo + ATR + BE |
+//| Author: ChatGPT (untuk Rey)                                      |
+//+------------------------------------------------------------------+
+#property strict
+#property version "2.1"
+
+// ================== INPUT PARAMETER ==================
+input ENUM_TIMEFRAMES PBX_Timeframe = PERIOD_M1; // TF analisa
+input int PBX_LookbackBars = 300;                // jumlah bar
+input int PBX_SwingLookback = 50;                // cari swing H/L
+input int PBX_CheckBarShift = 1;                 // bar tertutup
+input int PBX_EMA_Period = 200;                  // trend filter
+input int PBX_ATR_Period = 14;                   // ATR
+input double PBX_ATR_MultSL = 2.5;               // SL awal
+input double PBX_ATR_MultTSL = 1.5;              // trailing
+input double PBX_FiboTol = 0.0030;               // toleransi fibo
+input double PBX_PinBarBodyMax = 0.35;           // max body ratio
+input double PBX_PinBarTailMin = 0.60;           // min tail ratio
+input double PBX_BE_MinProfitPips = 100;         // minimal profit BE
+input double PBX_BE_BufferPips = 20;             // buffer setelah BE
+input double PBX_TrailStepPips = 30;             // langkah trailing
+
+// ================== ENUM & STRUCT ==================
+enum PBX_SignalType
+{
+    PBX_NONE = 0,
+    PBX_BUY = 1,
+    PBX_SELL = -1
+};
+
+struct PBX_SignalResult
+{
+    int signal;    // 0=none, 1=buy, -1=sell
+    double sl;     // stop loss awal
+    double entry;  // harga entry
+    double fibo50; // level fibo
+    double fibo618;
+};
+
+// ================== GET OHLC ==================
+bool PBX_GetOHLC(string sym, ENUM_TIMEFRAMES tf, int count,
+                 double &o[], double &h[], double &l[], double &c[])
+{
+    ArraySetAsSeries(o, true);
+    ArraySetAsSeries(h, true);
+    ArraySetAsSeries(l, true);
+    ArraySetAsSeries(c, true);
+    if (CopyOpen(sym, tf, 0, count, o) <= 0)
+        return false;
+    if (CopyHigh(sym, tf, 0, count, h) <= 0)
+        return false;
+    if (CopyLow(sym, tf, 0, count, l) <= 0)
+        return false;
+    if (CopyClose(sym, tf, 0, count, c) <= 0)
+        return false;
+    return true;
+}
+
+// ================== EMA & ATR ==================
+double PBX_GetEMA(string sym, ENUM_TIMEFRAMES tf, int period, int shift)
+{
+    int h = iMA(sym, tf, period, 0, MODE_EMA, PRICE_CLOSE);
+    if (h == INVALID_HANDLE)
+        return 0;
+    double b[];
+    ArraySetAsSeries(b, true);
+    if (CopyBuffer(h, 0, shift, 1, b) <= 0)
+    {
+        IndicatorRelease(h);
+        return 0;
+    }
+    double val = b[0];
+    IndicatorRelease(h);
+    return val;
+}
+double PBX_GetATR(string sym, ENUM_TIMEFRAMES tf, int period, int shift)
+{
+    int h = iATR(sym, tf, period);
+    if (h == INVALID_HANDLE)
+        return 0;
+    double b[];
+    ArraySetAsSeries(b, true);
+    if (CopyBuffer(h, 0, shift, 1, b) <= 0)
+    {
+        IndicatorRelease(h);
+        return 0;
+    }
+    double val = b[0];
+    IndicatorRelease(h);
+    return val;
+}
+
+// ================== Engulfing ==================
+bool PBX_BullishEngulf(int sh, const double &o[], const double &c[])
+{
+    return (c[sh] > o[sh] && c[sh + 1] < o[sh + 1] && c[sh] >= o[sh + 1] && o[sh] <= c[sh + 1]);
+}
+bool PBX_BearishEngulf(int sh, const double &o[], const double &c[])
+{
+    return (c[sh] < o[sh] && c[sh + 1] > o[sh + 1] && o[sh] >= c[sh + 1] && c[sh] <= o[sh + 1]);
+}
+
+// ================== Pin Bar ==================
+bool PBX_IsPinBar(int sh, const double &o[], const double &h[], const double &l[], const double &c[], bool &bull)
+{
+    double body = MathAbs(c[sh] - o[sh]);
+    double rng = h[sh] - l[sh];
+    if (rng <= 0)
+        return false;
+    double up = h[sh] - MathMax(o[sh], c[sh]);
+    double down = MathMin(o[sh], c[sh]) - l[sh];
+    if (body <= rng * PBX_PinBarBodyMax && down >= rng * PBX_PinBarTailMin)
+    {
+        bull = true;
+        return true;
+    }
+    if (body <= rng * PBX_PinBarBodyMax && up >= rng * PBX_PinBarTailMin)
+    {
+        bull = false;
+        return true;
+    }
+    return false;
+}
+
+// ================== Cari Swing ==================
+void PBX_GetSwingHL(const double &h[], const double &l[], int lookback, double &H, double &L)
+{
+    H = h[1];
+    L = l[1];
+    for (int i = 1; i <= lookback; i++)
+    {
+        if (h[i] > H)
+            H = h[i];
+        if (l[i] < L)
+            L = l[i];
+    }
+}
+
+// ================== DETECT SIGNAL ==================
+PBX_SignalResult PBX_DetectSignal()
+{
+    PBX_SignalResult r;
+    r.signal = PBX_NONE;
+    r.sl = 0;
+    r.entry = 0;
+    r.fibo50 = 0;
+    r.fibo618 = 0;
+    double o[], h[], l[], c[];
+    if (!PBX_GetOHLC(_Symbol, PBX_Timeframe, PBX_LookbackBars, o, h, l, c))
+        return r;
+    int sh = PBX_CheckBarShift;
+
+    bool bullEng = PBX_BullishEngulf(sh, o, c);
+    bool bearEng = PBX_BearishEngulf(sh, o, c);
+    bool isBullPin = false;
+    bool pin = PBX_IsPinBar(sh, o, h, l, c, isBullPin);
+
+    double H, L;
+    PBX_GetSwingHL(h, l, PBX_SwingLookback, H, L);
+    r.fibo50 = H - (H - L) * 0.5;
+    r.fibo618 = H - (H - L) * 0.618;
+
+    double atr = PBX_GetATR(_Symbol, PBX_Timeframe, PBX_ATR_Period, sh);
+    r.entry = c[sh];
+
+    if ((bullEng || (pin && isBullPin)) && r.entry >= r.fibo50 - PBX_FiboTol && r.entry <= r.fibo618 + PBX_FiboTol)
+    {
+        r.signal = PBX_BUY;
+        r.sl = r.entry - atr * PBX_ATR_MultSL;
+    }
+    if ((bearEng || (pin && !isBullPin)) && r.entry <= r.fibo50 + PBX_FiboTol && r.entry >= r.fibo618 - PBX_FiboTol)
+    {
+        r.signal = PBX_SELL;
+        r.sl = r.entry + atr * PBX_ATR_MultSL;
+    }
+    return r;
+}
+
+// ================== MANAGE TRAILING SL ==================
+double PBX_ManageSL(double orderOpenPrice, double currPrice, double sl, int direction)
+{
+    double pip = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * 10;
+    double beTrigger = PBX_BE_MinProfitPips * pip;
+    double beBuffer = PBX_BE_BufferPips * pip;
+    double trailStep = PBX_TrailStepPips * pip;
+    double atr = PBX_GetATR(_Symbol, PBX_Timeframe, PBX_ATR_Period, 0);
+
+    double newSL = sl;
+
+    if (direction == PBX_BUY)
+    {
+        double profit = currPrice - orderOpenPrice;
+        if (profit > beTrigger)
+            newSL = MathMax(newSL, orderOpenPrice + beBuffer);
+        if (profit > trailStep)
+            newSL = MathMax(newSL, currPrice - atr * PBX_ATR_MultTSL);
+    }
+    if (direction == PBX_SELL)
+    {
+        double profit = orderOpenPrice - currPrice;
+        if (profit > beTrigger)
+            newSL = MathMin(newSL, orderOpenPrice - beBuffer);
+        if (profit > trailStep)
+            newSL = MathMin(newSL, currPrice + atr * PBX_ATR_MultTSL);
+    }
+    return newSL;
+}
+
+// ==================== PBX TRAILING SL HANDLER ====================
+void PBX_TrailingSLHandler()
+{
+    // Loop semua posisi aktif
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
+    {
+        ulong ticket = PositionGetTicket(i);
+        if (!PositionSelectByTicket(ticket))
+            continue;
+
+        double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+        double currentSL = PositionGetDouble(POSITION_SL);
+        double currentTP = PositionGetDouble(POSITION_TP);
+        int dir = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? PBX_BUY : PBX_SELL;
+
+        // Harga saat ini
+        double currPrice = (dir == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                                            : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+        // Hitung level SL baru
+        double newSL = PBX_ManageSL(openPrice, currPrice, currentSL, dir);
+
+        // Hanya update jika SL berubah
+        if (newSL != currentSL)
+        {
+            MqlTradeRequest request;
+            MqlTradeResult result;
+            ZeroMemory(request);
+            ZeroMemory(result);
+
+            request.action = TRADE_ACTION_SLTP; // update SL/TP
+            request.position = ticket;
+            request.sl = newSL;
+            request.tp = currentTP;
+            request.symbol = _Symbol;
+            request.magic = 12345; // sesuaikan magic number EA
+
+            if (!OrderSend(request, result))
+                Print("❌ Update SL failed for ticket ", ticket, " retcode=", result.retcode);
+            else
+                Print("✅ SL updated for ticket ", ticket, " newSL=", newSL);
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//|          Trendline Break EA LuxAlgo-Like                         |
+//|          Legal Custom Version by ChatGPT                          |
+//+------------------------------------------------------------------+
+#property strict
+input ENUM_TIMEFRAMES TLB_Timeframe = PERIOD_M1;
+input int TLB_LookbackBars = 500;
+input double TLB_MinDistPips = 20;
+input int TLB_MaxLines = 20;
+input double TLB_ATR_Multiplier = 1.5;
+input int TLB_ATR_Period = 14;
+input color TLB_BuyLineColor = clrLime;
+input color TLB_SellLineColor = clrRed;
+input color TLB_BreakoutArrowBuy = clrDodgerBlue;
+input color TLB_BreakoutArrowSell = clrRed;
+input bool TLB_ShowInfoPanel = true;
+input double TLB_TP_Multiplier = 2.0; // Risk:Reward untuk TP
+
+struct TLB_Line
+{
+    string objName;
+    double price1;
+    double price2;
+    datetime time1;
+    datetime time2;
+    bool isHighLine;
+    bool triggered;
+    bool retested;
+};
+
+TLB_Line TLB_Lines[];
+int TLB_LineCount = 0;
+
+//--- Hapus object jika ada
+void TLB_DeleteObjectIfExists(string name)
+{
+    if (ObjectFind(0, name) >= 0)
+        ObjectDelete(0, name); // tambahkan chart ID
+}
+
+//--- Gambar panah breakout
+void TLB_DrawBreakoutMarker(bool isBuy, double price, datetime time)
+{
+    string objName = StringFormat("TLB_ARROW_%d_%d", TimeCurrent(), isBuy ? 1 : 0);
+    TLB_DeleteObjectIfExists(objName);
+    ObjectCreate(0, objName, OBJ_ARROW, 0, time, price);
+    ObjectSetInteger(0, objName, OBJPROP_ARROWCODE, isBuy ? 233 : 234);
+    ObjectSetInteger(0, objName, OBJPROP_COLOR, isBuy ? TLB_BreakoutArrowBuy : TLB_BreakoutArrowSell);
+    ObjectSetInteger(0, objName, OBJPROP_WIDTH, 2);
+}
+
+//--- Gambar marker retest
+void TLB_DrawRetestMarker(bool isBuy, double price, datetime time)
+{
+    string objName = StringFormat("TLB_RETEST_%d_%d", TimeCurrent(), isBuy ? 1 : 0);
+    TLB_DeleteObjectIfExists(objName);
+    ObjectCreate(0, objName, OBJ_TEXT, 0, time, price);
+    ObjectSetInteger(0, objName, OBJPROP_COLOR, isBuy ? clrDodgerBlue : clrRed);
+    ObjectSetString(0, objName, OBJPROP_TEXT, isBuy ? "RETEST BUY" : "RETEST SELL");
+    ObjectSetInteger(0, objName, OBJPROP_FONTSIZE, 10);
+}
+
+//--- Deteksi trendline
+void TLB_DetectTrendlines()
+{
+    ArrayResize(TLB_Lines, 0);
+    TLB_LineCount = 0;
+    int bars = iBars(_Symbol, TLB_Timeframe);
+    for (int i = 1; i < TLB_LookbackBars && TLB_LineCount < TLB_MaxLines; i++)
+    {
+        double high1 = iHigh(_Symbol, TLB_Timeframe, i);
+        double high2 = iHigh(_Symbol, TLB_Timeframe, i + 5);
+        double low1 = iLow(_Symbol, TLB_Timeframe, i);
+        double low2 = iLow(_Symbol, TLB_Timeframe, i + 5);
+
+        if (MathAbs(high1 - high2) > _Point * TLB_MinDistPips)
+        {
+            string name = "TLB_RES_" + IntegerToString(i);
+            ObjectCreate(0, name, OBJ_TREND, 0, iTime(_Symbol, TLB_Timeframe, i), high1, iTime(_Symbol, TLB_Timeframe, i + 5), high2);
+            ObjectSetInteger(0, name, OBJPROP_COLOR, TLB_SellLineColor);
+            ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+            // Perbaikan:
+            TLB_Line line; // buat instance struct
+            line.objName = name;
+            line.price1 = high1;
+            line.price2 = high2;
+            line.time1 = iTime(_Symbol, TLB_Timeframe, i);
+            line.time2 = iTime(_Symbol, TLB_Timeframe, i + 5);
+            line.isHighLine = true; // atau false untuk support
+            line.triggered = false;
+            line.retested = false;
+
+            ArrayResize(TLB_Lines, TLB_LineCount + 1); // pastikan array cukup
+            TLB_Lines[TLB_LineCount++] = line;
+        }
+        if (MathAbs(low1 - low2) > _Point * TLB_MinDistPips)
+        {
+            string name = "TLB_SUP_" + IntegerToString(i);
+            ObjectCreate(0, name, OBJ_TREND, 0, iTime(_Symbol, TLB_Timeframe, i), low1, iTime(_Symbol, TLB_Timeframe, i + 5), low2);
+            ObjectSetInteger(0, name, OBJPROP_COLOR, TLB_BuyLineColor);
+            ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+            TLB_Line line; // buat instance struct
+            line.objName = name;
+            line.price1 = low1;
+            line.price2 = low2;
+            line.time1 = iTime(_Symbol, TLB_Timeframe, i);
+            line.time2 = iTime(_Symbol, TLB_Timeframe, i + 5);
+            line.isHighLine = false; // garis support
+            line.triggered = false;
+            line.retested = false;
+
+            ArrayResize(TLB_Lines, TLB_LineCount + 1); // pastikan array cukup
+            TLB_Lines[TLB_LineCount++] = line;
+        }
+    }
+}
+
+//--- Deteksi breakout dan retest
+void TLB_DetectBreakouts()
+{
+    double closePrice = iClose(_Symbol, TLB_Timeframe, 0);
+    for (int i = 0; i < TLB_LineCount; i++)
+    {
+        TLB_Line line = TLB_Lines[i];
+        if (!line.triggered)
+        {
+            double linePriceNow = line.price1 + (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
+            if (!line.isHighLine && closePrice > linePriceNow)
+            {
+                line.triggered = true;
+                TLB_DrawBreakoutMarker(true, linePriceNow, TimeCurrent());
+                TLB_EnterTrade(true, linePriceNow); // Entry BUY
+            }
+            if (line.isHighLine && closePrice < linePriceNow)
+            {
+                line.triggered = true;
+                TLB_DrawBreakoutMarker(false, linePriceNow, TimeCurrent());
+                TLB_EnterTrade(false, linePriceNow); // Entry SELL
+            }
+        }
+        // RETEST
+        if (line.triggered && !line.retested)
+        {
+            double linePriceNow = line.price1 + (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
+            if (!line.isHighLine && closePrice < linePriceNow)
+            {
+                line.retested = true;
+                TLB_DrawRetestMarker(true, closePrice, TimeCurrent());
+            }
+            if (line.isHighLine && closePrice > linePriceNow)
+            {
+                line.retested = true;
+                TLB_DrawRetestMarker(false, closePrice, TimeCurrent());
+            }
+        }
+    }
+}
+
+//--- ATR trailing SL
+double TLB_ATRTrailingSL(bool isBuy)
+{
+    // Ambil ATR terbaru
+    double atr = iATR(_Symbol, TLB_Timeframe, TLB_ATR_Period);
+
+    // Hitung SL berdasarkan ATR
+    double sl = 0.0;
+    if (isBuy)
+        sl = SymbolInfoDouble(_Symbol, SYMBOL_BID) - atr * TLB_ATR_Multiplier;
+    else
+        sl = SymbolInfoDouble(_Symbol, SYMBOL_ASK) + atr * TLB_ATR_Multiplier;
+
+    return sl;
+}
+
+//--- Entry otomatis menggunakan ExecuteBuy / ExecuteSell
+void TLB_EnterTrade(bool isBuy, double price)
+{
+    double atrSL = TLB_ATRTrailingSL(isBuy);             // SL berdasarkan ATR
+    int slPips = (int)MathAbs((price - atrSL) / _Point); // konversi SL ke pips
+    int tpPips = (int)(slPips * TLB_TP_Multiplier);      // TP sesuai RR
+
+    double lot = 0.01; // bisa diganti sesuai risk management
+
+    string signalSource = "Trend Lines Break";
+
+    if (isBuy)
+    {
+        ExecuteBuy(lot, slPips, tpPips, signalSource);
+    }
+    else
+    {
+        ExecuteSell(lot, slPips, tpPips, signalSource);
+    }
+}
+
+//--- Panel info floating
+void TLB_DrawInfoPanel()
+{
+    if (!TLB_ShowInfoPanel)
+        return;
+    string name = "TLB_INFO_PANEL";
+    TLB_DeleteObjectIfExists(name);
+    ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+    ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_RIGHT_UPPER);
+    ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 20);
+    ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 20);
+    string text = StringFormat("TLB Lines: %d\nBreakouts: %d", TLB_LineCount, CountBreakouts());
+    ObjectSetString(0, name, OBJPROP_TEXT, text);
+    ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 11);
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+}
+
+int CountBreakouts()
+{
+    int cnt = 0;
+    for (int i = 0; i < TLB_LineCount; i++)
+        if (TLB_Lines[i].triggered)
+            cnt++;
+    return cnt;
+}
+
+//--- Fungsi utama dipanggil OnTick
+void LuxAlgoTrendLinesWithBreak()
+{
+    TLB_DetectTrendlines();
+    TLB_DetectBreakouts();
+    TLB_DrawInfoPanel();
 }
