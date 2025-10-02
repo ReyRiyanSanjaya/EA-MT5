@@ -6118,7 +6118,7 @@ string GetErrorDescription(int errorCode)
 //| Author: ChatGPT (untuk Rey)                                      |
 //+------------------------------------------------------------------+
 #property strict
-#property version "2.1"
+#property version "2.2"
 
 // ================== INPUT PARAMETER ==================
 input ENUM_TIMEFRAMES PBX_Timeframe = PERIOD_M1; // TF analisa
@@ -6135,6 +6135,9 @@ input double PBX_PinBarTailMin = 0.60;           // min tail ratio
 input double PBX_BE_MinProfitPips = 100;         // minimal profit BE
 input double PBX_BE_BufferPips = 20;             // buffer setelah BE
 input double PBX_TrailStepPips = 30;             // langkah trailing
+input double PBX_RiskPercent = 1.0;              // Risk per trade (%)
+input double PBX_FixedLotSize = 0.1;             // Fixed lot size
+input bool PBX_UseMoneyManagement = true;        // Gunakan money management
 
 // ================== ENUM & STRUCT ==================
 enum PBX_SignalType
@@ -6157,10 +6160,16 @@ struct PBX_SignalResult
 bool PBX_GetOHLC(string sym, ENUM_TIMEFRAMES tf, int count,
                  double &o[], double &h[], double &l[], double &c[])
 {
+    ArrayResize(o, count);
+    ArrayResize(h, count);
+    ArrayResize(l, count);
+    ArrayResize(c, count);
+    
     ArraySetAsSeries(o, true);
     ArraySetAsSeries(h, true);
     ArraySetAsSeries(l, true);
     ArraySetAsSeries(c, true);
+    
     if (CopyOpen(sym, tf, 0, count, o) <= 0)
         return false;
     if (CopyHigh(sym, tf, 0, count, h) <= 0)
@@ -6189,6 +6198,7 @@ double PBX_GetEMA(string sym, ENUM_TIMEFRAMES tf, int period, int shift)
     IndicatorRelease(h);
     return val;
 }
+
 double PBX_GetATR(string sym, ENUM_TIMEFRAMES tf, int period, int shift)
 {
     int h = iATR(sym, tf, period);
@@ -6206,25 +6216,76 @@ double PBX_GetATR(string sym, ENUM_TIMEFRAMES tf, int period, int shift)
     return val;
 }
 
+// ================== FILTER TREND ==================
+bool PBX_CheckTrend(string sym, ENUM_TIMEFRAMES tf, int period, int signal)
+{
+    double ema = PBX_GetEMA(sym, tf, period, 1); // EMA dari bar sebelumnya
+    double currentPrice = SymbolInfoDouble(sym, SYMBOL_BID);
+    
+    if (ema == 0) return false; // EMA tidak valid
+    
+    if (signal == PBX_BUY)
+        return currentPrice > ema; // Hanya buy di atas EMA
+    else if (signal == PBX_SELL)
+        return currentPrice < ema; // Hanya sell di bawah EMA
+    
+    return false;
+}
+
+// ================== MONEY MANAGEMENT ==================
+double PBX_CalculateLotSize(double slDistance)
+{
+    if (!PBX_UseMoneyManagement)
+        return PBX_FixedLotSize;
+    
+    double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double riskAmount = accountBalance * PBX_RiskPercent / 100.0;
+    double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+    double pointValue = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+    
+    if (slDistance <= 0 || tickValue <= 0 || pointValue <= 0)
+        return PBX_FixedLotSize;
+    
+    double lotSize = riskAmount / (slDistance * tickValue / pointValue);
+    
+    // Validasi lot size
+    double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    double stepLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+    
+    lotSize = MathMax(lotSize, minLot);
+    lotSize = MathMin(lotSize, maxLot);
+    lotSize = MathRound(lotSize / stepLot) * stepLot;
+    
+    return NormalizeDouble(lotSize, 2);
+}
+
 // ================== Engulfing ==================
 bool PBX_BullishEngulf(int sh, const double &o[], const double &c[])
 {
+    if (sh + 1 >= ArraySize(o)) return false;
     return (c[sh] > o[sh] && c[sh + 1] < o[sh + 1] && c[sh] >= o[sh + 1] && o[sh] <= c[sh + 1]);
 }
+
 bool PBX_BearishEngulf(int sh, const double &o[], const double &c[])
 {
+    if (sh + 1 >= ArraySize(o)) return false;
     return (c[sh] < o[sh] && c[sh + 1] > o[sh + 1] && o[sh] >= c[sh + 1] && c[sh] <= o[sh + 1]);
 }
 
 // ================== Pin Bar ==================
 bool PBX_IsPinBar(int sh, const double &o[], const double &h[], const double &l[], const double &c[], bool &bull)
 {
+    if (sh >= ArraySize(o)) return false;
+    
     double body = MathAbs(c[sh] - o[sh]);
     double rng = h[sh] - l[sh];
     if (rng <= 0)
         return false;
+    
     double up = h[sh] - MathMax(o[sh], c[sh]);
     double down = MathMin(o[sh], c[sh]) - l[sh];
+    
     if (body <= rng * PBX_PinBarBodyMax && down >= rng * PBX_PinBarTailMin)
     {
         bull = true;
@@ -6239,16 +6300,18 @@ bool PBX_IsPinBar(int sh, const double &o[], const double &h[], const double &l[
 }
 
 // ================== Cari Swing ==================
-void PBX_GetSwingHL(const double &h[], const double &l[], int lookback, double &H, double &L)
+void PBX_GetSwingHL(const double &h[], const double &l[], int lookback, double &swingHigh, double &swingLow)
 {
-    H = h[1];
-    L = l[1];
-    for (int i = 1; i <= lookback; i++)
+    if (ArraySize(h) < lookback || ArraySize(l) < lookback)
+        return;
+        
+    swingHigh = h[1];
+    swingLow = l[1];
+    
+    for (int i = 2; i <= lookback && i < ArraySize(h); i++)
     {
-        if (h[i] > H)
-            H = h[i];
-        if (l[i] < L)
-            L = l[i];
+        if (h[i] > swingHigh) swingHigh = h[i];
+        if (l[i] < swingLow) swingLow = l[i];
     }
 }
 
@@ -6261,10 +6324,14 @@ PBX_SignalResult PBX_DetectSignal()
     r.entry = 0;
     r.fibo50 = 0;
     r.fibo618 = 0;
+    
     double o[], h[], l[], c[];
     if (!PBX_GetOHLC(_Symbol, PBX_Timeframe, PBX_LookbackBars, o, h, l, c))
         return r;
+    
     int sh = PBX_CheckBarShift;
+    if (sh >= ArraySize(o) || sh + 1 >= ArraySize(o))
+        return r;
 
     bool bullEng = PBX_BullishEngulf(sh, o, c);
     bool bearEng = PBX_BearishEngulf(sh, o, c);
@@ -6273,22 +6340,38 @@ PBX_SignalResult PBX_DetectSignal()
 
     double H, L;
     PBX_GetSwingHL(h, l, PBX_SwingLookback, H, L);
-    r.fibo50 = H - (H - L) * 0.5;
-    r.fibo618 = H - (H - L) * 0.618;
+    
+    // PERBAIKAN PENTING: Fibonacci calculation yang benar
+    r.fibo50 = L + (H - L) * 0.50;   // 50% retracement dari bawah
+    r.fibo618 = L + (H - L) * 0.618; // 61.8% retracement dari bawah
 
     double atr = PBX_GetATR(_Symbol, PBX_Timeframe, PBX_ATR_Period, sh);
     r.entry = c[sh];
 
-    if ((bullEng || (pin && isBullPin)) && r.entry >= r.fibo50 - PBX_FiboTol && r.entry <= r.fibo618 + PBX_FiboTol)
+    // PERBAIKAN: Kondisi Buy yang benar (mendekati level support)
+    if ((bullEng || (pin && isBullPin)) && 
+        r.entry <= r.fibo50 + PBX_FiboTol && 
+        r.entry >= r.fibo618 - PBX_FiboTol)
     {
-        r.signal = PBX_BUY;
-        r.sl = r.entry - atr * PBX_ATR_MultSL;
+        if (PBX_CheckTrend(_Symbol, PBX_Timeframe, PBX_EMA_Period, PBX_BUY))
+        {
+            r.signal = PBX_BUY;
+            r.sl = r.entry - atr * PBX_ATR_MultSL;
+        }
     }
-    if ((bearEng || (pin && !isBullPin)) && r.entry <= r.fibo50 + PBX_FiboTol && r.entry >= r.fibo618 - PBX_FiboTol)
+    
+    // PERBAIKAN: Kondisi Sell yang benar (mendekati level resistance)
+    if ((bearEng || (pin && !isBullPin)) && 
+        r.entry >= r.fibo50 - PBX_FiboTol && 
+        r.entry <= r.fibo618 + PBX_FiboTol)
     {
-        r.signal = PBX_SELL;
-        r.sl = r.entry + atr * PBX_ATR_MultSL;
+        if (PBX_CheckTrend(_Symbol, PBX_Timeframe, PBX_EMA_Period, PBX_SELL))
+        {
+            r.signal = PBX_SELL;
+            r.sl = r.entry + atr * PBX_ATR_MultSL;
+        }
     }
+    
     return r;
 }
 
@@ -6325,45 +6408,85 @@ double PBX_ManageSL(double orderOpenPrice, double currPrice, double sl, int dire
 // ==================== PBX TRAILING SL HANDLER ====================
 void PBX_TrailingSLHandler()
 {
-    // Loop semua posisi aktif
     for (int i = PositionsTotal() - 1; i >= 0; i--)
     {
         ulong ticket = PositionGetTicket(i);
         if (!PositionSelectByTicket(ticket))
             continue;
 
+        // Cek magic number untuk pastikan ini posisi EA kita
+        long magic = PositionGetInteger(POSITION_MAGIC);
+        if (magic != 12345) continue;
+
         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
         double currentSL = PositionGetDouble(POSITION_SL);
         double currentTP = PositionGetDouble(POSITION_TP);
         int dir = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? PBX_BUY : PBX_SELL;
 
-        // Harga saat ini
         double currPrice = (dir == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
                                             : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-        // Hitung level SL baru
         double newSL = PBX_ManageSL(openPrice, currPrice, currentSL, dir);
 
-        // Hanya update jika SL berubah
-        if (newSL != currentSL)
+        if ((dir == PBX_BUY && newSL > currentSL) || (dir == PBX_SELL && newSL < currentSL))
         {
             MqlTradeRequest request;
             MqlTradeResult result;
             ZeroMemory(request);
             ZeroMemory(result);
 
-            request.action = TRADE_ACTION_SLTP; // update SL/TP
+            request.action = TRADE_ACTION_SLTP;
             request.position = ticket;
             request.sl = newSL;
             request.tp = currentTP;
             request.symbol = _Symbol;
-            request.magic = 12345; // sesuaikan magic number EA
+            request.magic = 12345;
 
             if (!OrderSend(request, result))
                 Print("❌ Update SL failed for ticket ", ticket, " retcode=", result.retcode);
             else
                 Print("✅ SL updated for ticket ", ticket, " newSL=", newSL);
         }
+    }
+}
+
+// ==================== FUNGSI OPEN POSITION ====================
+void PBX_OpenPosition(const PBX_SignalResult &signal)
+{
+    double slDistance = MathAbs(signal.entry - signal.sl);
+    double lotSize = PBX_CalculateLotSize(slDistance);
+    
+    // Validasi lot size akhir
+    if (lotSize > 2.0) 
+    {
+        Print("⚠️ Lot size too large: ", lotSize, " Using fixed lot 0.1");
+        lotSize = 0.1;
+    }
+    
+    MqlTradeRequest request;
+    MqlTradeResult result;
+    ZeroMemory(request);
+    ZeroMemory(result);
+    
+    request.action = TRADE_ACTION_DEAL;
+    request.symbol = _Symbol;
+    request.volume = lotSize;
+    request.type = (signal.signal == PBX_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+    request.price = (signal.signal == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) 
+                                              : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    request.sl = signal.sl;
+    request.deviation = 10;
+    request.magic = 12345;
+    request.comment = "PBX Strategy v2.2";
+    
+    if (OrderSend(request, result))
+    {
+        Print("✅ Order opened: ", result.order, " Lot: ", lotSize, " Type: ", 
+              (signal.signal == PBX_BUY ? "BUY" : "SELL"));
+    }
+    else
+    {
+        Print("❌ Order failed: ", GetLastError(), " Lot attempted: ", lotSize);
     }
 }
 
