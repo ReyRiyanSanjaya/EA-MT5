@@ -10,7 +10,7 @@
 //+------------------------------------------------------------------+
 //| Input Parameters (Super Agresif / Scalping)                     |
 //+------------------------------------------------------------------+
-input double BE_Pips = 50;                   // profit minimal untuk BE → cepat BE
+input double BE_Pips = 20;                   // profit minimal untuk BE → cepat BE
 input double BE_Buffer = 50;                 // buffer setelah BE → lebih agresif
 input int LevelsCount = 2;                   // jumlah level trailing aktif
 input double TrailLevel1 = 100;              // level profit pip 1 → mulai trailing cepat
@@ -1760,136 +1760,147 @@ void ManageTrailingBreakCloseUltimate()
     params.tfConfirm = ConfirmTF;
     params.useTrendFilter = UseTrendFilter;
 
-    for (int i = PositionsTotal() - 1; i >= 0; i--)
-    {
-        if (PositionGetTicket(i))
+        for (int i = PositionsTotal() - 1; i >= 0; i--)
         {
-            ulong ticket = PositionGetInteger(POSITION_TICKET);
-            long type = PositionGetInteger(POSITION_TYPE);
-            double entry = PositionGetDouble(POSITION_PRICE_OPEN);
+            if (!PositionSelectByTicket(i)) 
+            continue;
+
+            ulong ticket   = PositionGetInteger(POSITION_TICKET);
+            long type      = PositionGetInteger(POSITION_TYPE);
+            double entry   = PositionGetDouble(POSITION_PRICE_OPEN);
             double currentSL = PositionGetDouble(POSITION_SL);
             double currentTP = PositionGetDouble(POSITION_TP);
-            double price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+            double price   = (type == POSITION_TYPE_BUY) ? 
+                            SymbolInfoDouble(_Symbol, SYMBOL_BID) : 
+                            SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-            // Hitung profit dalam pips
-            double profitPips = 0;
-            if (type == POSITION_TYPE_BUY)
-                profitPips = (price - entry) / _Point;
-            else if (type == POSITION_TYPE_SELL)
-                profitPips = (entry - price) / _Point;
+        // --- Hitung profit dalam pips (disesuaikan dengan digit broker) ---
+        double profitPips = (type == POSITION_TYPE_BUY) ? 
+                            (price - entry) / _Point : 
+                            (entry - price) / _Point;
 
-            double newSL = currentSL;
-            bool slChanged = false;
+        if (_Digits == 5 || _Digits == 3)
+            profitPips /= 10.0;
 
-            // --- Break-Even Logic ---
-            if (profitPips >= params.bePips && currentSL != entry)
+        double newSL = currentSL;
+        bool slChanged = false;
+
+        // Debug awal
+        PrintFormat("DEBUG: Ticket=%d, Type=%s, Profit=%.1f pips, Entry=%.5f, Price=%.5f, SL=%.5f",
+                    ticket, (type==POSITION_TYPE_BUY ? "BUY" : "SELL"),
+                    profitPips, entry, price, currentSL);
+
+        // --- Break-Even Logic ---
+        if (profitPips >= params.bePips)
+        {
+            double beLevel = (type == POSITION_TYPE_BUY) ?
+                             entry + (params.beBuffer * _Point) :
+                             entry - (params.beBuffer * _Point);
+
+            if (currentSL == 0 ||  // kalau belum ada SL
+                (type == POSITION_TYPE_BUY && beLevel > currentSL) ||
+                (type == POSITION_TYPE_SELL && beLevel < currentSL))
             {
-                double beLevel = 0;
+                newSL = beLevel;
+                slChanged = true;
+                PrintFormat("✅ BE Triggered: Ticket %d, BE Level=%.5f", ticket, beLevel);
+            }
+        }
+
+        // --- Trailing Stop Logic ---
+        for (int lvl = 0; lvl < params.levelsCount; lvl++)
+        {
+            if (profitPips >= params.trailLevels[lvl])
+            {
+                double trailSL = 0;
+                double trailDistance = params.trailDistances[lvl] * _Point;
+
                 if (type == POSITION_TYPE_BUY)
-                    beLevel = entry + (params.beBuffer * _Point);
+                {
+                    trailSL = price - trailDistance;
+                    if ((currentSL == 0 || trailSL > newSL) && (price - trailSL) > (2 * _Point))
+                    {
+                        newSL = trailSL;
+                        slChanged = true;
+                        PrintFormat("✅ Trailing BUY: Ticket %d, New SL=%.5f", ticket, newSL);
+                    }
+                }
                 else if (type == POSITION_TYPE_SELL)
-                    beLevel = entry - (params.beBuffer * _Point);
-
-                if ((type == POSITION_TYPE_BUY && beLevel > currentSL) ||
-                    (type == POSITION_TYPE_SELL && beLevel < currentSL))
                 {
-                    newSL = beLevel;
-                    slChanged = true;
-                }
-            }
-
-            // --- Trailing Stop Logic ---
-            for (int lvl = 0; lvl < params.levelsCount; lvl++)
-            {
-                if (profitPips >= params.trailLevels[lvl])
-                {
-                    double trailSL = 0;
-                    double trailDistance = params.trailDistances[lvl] * _Point;
-
-                    if (type == POSITION_TYPE_BUY)
+                    trailSL = price + trailDistance;
+                    if ((currentSL == 0 || trailSL < newSL) && (trailSL - price) > (2 * _Point))
                     {
-                        trailSL = price - trailDistance;
-                        if (trailSL > newSL && (price - trailSL) > (10 * _Point))
-                        {
-                            newSL = trailSL;
-                            slChanged = true;
-                        }
-                    }
-                    else if (type == POSITION_TYPE_SELL)
-                    {
-                        trailSL = price + trailDistance;
-                        if (trailSL < newSL && (trailSL - price) > (10 * _Point))
-                        {
-                            newSL = trailSL;
-                            slChanged = true;
-                        }
+                        newSL = trailSL;
+                        slChanged = true;
+                        PrintFormat("✅ Trailing SELL: Ticket %d, New SL=%.5f", ticket, newSL);
                     }
                 }
             }
+        }
 
-            // --- Tambahan Trailing Stop berbasis ATR (Stochastic style) ---
+        // --- ATR-based Trailing ---
+        {
+            int atrPeriod = 14;
+            ENUM_TIMEFRAMES atrTF = PERIOD_M15;
+            double trailFactor = 1.5;
+
+            int atrHandle = iATR(_Symbol, atrTF, atrPeriod);
+            if (atrHandle != INVALID_HANDLE)
             {
-                int atrPeriod = 14;
-                ENUM_TIMEFRAMES atrTF = PERIOD_M15;
-                double trailFactor = 1.5;
+                double atrArr[];
+                ArraySetAsSeries(atrArr, true);
 
-                int atrHandle = iATR(_Symbol, atrTF, atrPeriod);
-                if (atrHandle != INVALID_HANDLE)
+                if (CopyBuffer(atrHandle, 0, 0, 1, atrArr) > 0)
                 {
-                    double atrArr[];
-                    ArraySetAsSeries(atrArr, true);
-
-                    if (CopyBuffer(atrHandle, 0, 0, 1, atrArr) > 0)
+                    double atr = atrArr[0];
+                    if (atr > 0.0)
                     {
-                        double atr = atrArr[0];
-                        if (atr > 0.0)
-                        {
-                            bool isBuy = (type == POSITION_TYPE_BUY);
-                            double stochSL = StochTrailingStop(price, newSL, isBuy, atr, trailFactor);
+                        bool isBuy = (type == POSITION_TYPE_BUY);
+                        double stochSL = StochTrailingStop(price, newSL, isBuy, atr, trailFactor);
 
-                            if (MathAbs(stochSL - newSL) > (1.0 * _Point))
-                            {
-                                newSL = stochSL;
-                                slChanged = true;
-                            }
+                        if (MathAbs(stochSL - newSL) > (1.0 * _Point))
+                        {
+                            newSL = stochSL;
+                            slChanged = true;
+                            PrintFormat("✅ ATR Trail: Ticket %d, ATR=%.1f, New SL=%.5f", ticket, atr, newSL);
                         }
                     }
-                    else
-                    {
-                        PrintFormat("⚠️ ATR CopyBuffer failed. Error: %d", GetLastError());
-                    }
-
-                    IndicatorRelease(atrHandle);
                 }
                 else
                 {
-                    PrintFormat("⚠️ iATR failed. Error: %d", GetLastError());
+                    PrintFormat("⚠️ ATR CopyBuffer failed. Error: %d", GetLastError());
                 }
+
+                IndicatorRelease(atrHandle);
             }
-
-            // --- Update SL jika diperlukan ---
-            if (slChanged && newSL != currentSL)
+            else
             {
-                MqlTradeRequest req;
-                MqlTradeResult res;
-                ZeroMemory(req);
-                ZeroMemory(res);
+                PrintFormat("⚠️ iATR failed. Error: %d", GetLastError());
+            }
+        }
 
-                req.action = TRADE_ACTION_SLTP;
-                req.position = ticket;
-                req.sl = NormalizeDouble(newSL, _Digits);
-                req.tp = currentTP;
-                req.deviation = 10;
+        // --- Update SL jika ada perubahan ---
+        if (slChanged && newSL != currentSL)
+        {
+            MqlTradeRequest req;
+            MqlTradeResult res;
+            ZeroMemory(req);
+            ZeroMemory(res);
 
-                if (OrderSend(req, res))
-                {
-                    PrintFormat("✅ SL Updated: Ticket %d, New SL: %.5f, Profit: %.1f pips",
-                                ticket, newSL, profitPips / 10.0);
-                }
-                else
-                {
-                    PrintFormat("❌ SL Update Failed: Ticket %d, Error: %d", ticket, GetLastError());
-                }
+            req.action   = TRADE_ACTION_SLTP;
+            req.position = ticket;
+            req.sl       = NormalizeDouble(newSL, _Digits);
+            req.tp       = currentTP;
+            req.deviation = 10;
+
+            if (OrderSend(req, res))
+            {
+                PrintFormat("✅ SL Updated: Ticket %d, New SL: %.5f (Profit: %.1f pips)",
+                            ticket, newSL, profitPips);
+            }
+            else
+            {
+                PrintFormat("❌ SL Update Failed: Ticket %d, Error: %d", ticket, GetLastError());
             }
         }
     }
