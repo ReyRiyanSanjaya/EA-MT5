@@ -388,26 +388,27 @@ namespace RiskManager
             return false;
         }
 
-        static double equityStart = GetEquity();
-        double currentEquity = GetEquity();
-        double ddPercent = ((equityStart - currentEquity) / equityStart) * 100.0;
-        double maxAllowedDD = isPremiumTrade ? MaxDailyDD * 0.5 : MaxDailyDD;
-        if (ddPercent > maxAllowedDD)
-        {
-            Print("Daily drawdown limit reached: ", ddPercent, " (Max: ", maxAllowedDD, ")");
-            return false;
-        }
+        // atur drawdown disini 
+        // static double equityStart = GetEquity();
+        // double currentEquity = GetEquity();
+        // double ddPercent = ((equityStart - currentEquity) / equityStart) * 100.0;
+        // double maxAllowedDD = isPremiumTrade ? MaxDailyDD * 0.5 : MaxDailyDD;
+        // if (ddPercent > maxAllowedDD)
+        // {
+        //     Print("Daily drawdown limit reached: ", ddPercent, " (Max: ", maxAllowedDD, ")");
+        //     return false;
+        // }
 
-        if (isPremiumTrade)
-        {
-            double freeMargin = GetFreeMargin();
-            double balance = GetBalance();
-            if (freeMargin < balance * 0.3)
-            {
-                Print("Insufficient free margin for premium trade: ", freeMargin);
-                return false;
-            }
-        }
+        // if (isPremiumTrade)
+        // {
+        //     double freeMargin = GetFreeMargin();
+        //     double balance = GetBalance();
+        //     if (freeMargin < balance * 0.3)
+        //     {
+        //         Print("Insufficient free margin for premium trade: ", freeMargin);
+        //         return false;
+        //     }
+        // }
 
         return true;
     }
@@ -817,12 +818,12 @@ bool ExecuteTierWithFilter(string tierName, TierType tier)
         // =================== Order Placement ===================
         if (pbxSignal.signal == PBX_BUY)
         {
-            ExecuteBuy(1.0, (int)slPips, (int)tpPips, tierName + " PBX BUY");
+            ExecuteBuy(2.0, (int)slPips, (int)tpPips, tierName + " PBX BUY");
             tradeExecuted = true;
         }
         else if (pbxSignal.signal == PBX_SELL)
         {
-            ExecuteSell(1.0, (int)slPips, (int)tpPips, tierName + " PBX SELL");
+            ExecuteSell(2.0, (int)slPips, (int)tpPips, tierName + " PBX SELL");
             tradeExecuted = true;
         }
     }
@@ -6483,39 +6484,59 @@ void TLB_DetectTrendlines()
 //--- Deteksi breakout dan retest
 void TLB_DetectBreakouts()
 {
-    double closePrice = iClose(_Symbol, TLB_Timeframe, 0);
+    double closePrice = iClose(_Symbol, TLB_Timeframe, 1); // pakai candle sebelumnya
+    double currentPrice = iClose(_Symbol, TLB_Timeframe, 0); // candle sekarang
+
     for (int i = 0; i < TLB_LineCount; i++)
     {
+        // akses by reference supaya update struct
         TLB_Line line = TLB_Lines[i];
+
+        double linePriceNow = line.price1 + 
+            (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
+
+        // --- STEP 1: Breakout detection (hanya tandai)
         if (!line.triggered)
         {
-            double linePriceNow = line.price1 + (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
             if (!line.isHighLine && closePrice > linePriceNow)
             {
                 line.triggered = true;
                 TLB_DrawBreakoutMarker(true, linePriceNow, TimeCurrent());
-                TLB_EnterTrade(true, linePriceNow); // Entry BUY
             }
             if (line.isHighLine && closePrice < linePriceNow)
             {
                 line.triggered = true;
                 TLB_DrawBreakoutMarker(false, linePriceNow, TimeCurrent());
-                TLB_EnterTrade(false, linePriceNow); // Entry SELL
             }
         }
-        // RETEST
+
+        // --- STEP 2: Retest setelah breakout
         if (line.triggered && !line.retested)
         {
-            double linePriceNow = line.price1 + (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
-            if (!line.isHighLine && closePrice < linePriceNow)
+            // cek apakah candle terakhir menyentuh garis (retest)
+            double low = iLow(_Symbol, TLB_Timeframe, 1);
+            double high = iHigh(_Symbol, TLB_Timeframe, 1);
+
+            if (!line.isHighLine && low <= linePriceNow) // support di-retest
             {
-                line.retested = true;
-                TLB_DrawRetestMarker(true, closePrice, TimeCurrent());
+                // entry BUY jika candle berikutnya close di atas
+                if (currentPrice > linePriceNow)
+                {
+                    line.retested = true;
+                    TLB_DrawRetestMarker(true, currentPrice, TimeCurrent());
+                    TLB_EnterTrade(true, currentPrice);
+                }
             }
-            if (line.isHighLine && closePrice > linePriceNow)
+
+            if (line.isHighLine && high >= linePriceNow) // resistance di-retest
             {
-                line.retested = true;
-                TLB_DrawRetestMarker(false, closePrice, TimeCurrent());
+                // entry SELL jika candle berikutnya close di bawah
+                if (currentPrice < linePriceNow)
+                {
+                    line.retested = true;
+                    TLB_DrawRetestMarker(false, currentPrice, TimeCurrent());
+                    TLB_EnterTrade(false, currentPrice);
+                }
             }
         }
     }
@@ -6540,22 +6561,34 @@ double TLB_ATRTrailingSL(bool isBuy)
 //--- Entry otomatis menggunakan ExecuteBuy / ExecuteSell
 void TLB_EnterTrade(bool isBuy, double price)
 {
-    double atrSL = TLB_ATRTrailingSL(isBuy);             // SL berdasarkan ATR
-    int slPips = (int)MathAbs((price - atrSL) / _Point); // konversi SL ke pips
-    int tpPips = (int)(slPips * TLB_TP_Multiplier);      // TP sesuai RR
+    // ===== Tambahkan Filter Trend di M1 =====
+    int emaPeriod = 200;
+    ENUM_TIMEFRAMES emaTF = PERIOD_M1;  // paksa pakai M1
+    double ema200 = iMA(_Symbol, emaTF, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
 
-    double lot = 0.01; // bisa diganti sesuai risk management
+    // Ambil harga terakhir dari M1
+    double closeM1 = iClose(_Symbol, PERIOD_M1, 0);
 
+    // Kalau harga di bawah EMA → hanya SELL, tolak BUY
+    if(isBuy && closeM1 < ema200)
+        return;
+
+    // Kalau harga di atas EMA → hanya BUY, tolak SELL
+    if(!isBuy && closeM1 > ema200)
+        return;
+    // ========================================
+
+    double atrSL = TLB_ATRTrailingSL(isBuy);             
+    int slPips = (int)MathAbs((price - atrSL) / _Point); 
+    int tpPips = (int)(slPips * TLB_TP_Multiplier);      
+
+    double lot = 0.02; 
     string signalSource = "Trend Lines Break";
 
     if (isBuy)
-    {
         ExecuteBuy(lot, slPips, tpPips, signalSource);
-    }
     else
-    {
         ExecuteSell(lot, slPips, tpPips, signalSource);
-    }
 }
 
 //--- Panel info floating
