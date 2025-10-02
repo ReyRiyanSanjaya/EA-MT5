@@ -4837,7 +4837,7 @@ input int Stoch_KPeriod = 14;                    // %K period
 input int Stoch_DPeriod = 3;                     // %D period
 input int Stoch_Slowing = 3;                     // Slowing period
 input int Stoch_EMAPeriod = 50;                  // EMA period untuk trend filter
-input double Stoch_ATR_Multiplier = 1.5;         // ATR multiplier untuk SL
+input double Stoch_ATR_Multiplier = 3.5;         // ATR multiplier untuk SL
 input double Stoch_TrailFactor = 1.0;            // Trailing stop factor
 
 //==================================================================
@@ -4850,7 +4850,7 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
                                                 int dPeriod = 3,
                                                 int slowing = 3,
                                                 int emaPeriod = 50,
-                                                double atrMultiplier = 2.5,
+                                                double atrMultiplier = 3.5,
                                                 int shift = 0)
 {
     StochSignal sig;
