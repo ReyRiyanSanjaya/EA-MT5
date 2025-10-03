@@ -9,7 +9,6 @@
 
 #include <Trade\Trade.mqh>
 
-
 // Risk Management Parameters (lebih fleksibel)
 input double RiskPercent = 100.0; // risiko per trade (% balance) → bisa ambil lot lebih besar
 input double MaxDailyDD = 100.0;  // max drawdown harian (%)
@@ -253,10 +252,10 @@ public:
             baseConfidence += 0.2; // Harmonic patterns get higher confidence
 
         // Tambahan: Adjust berdasarkan Iceberg detection
-        IcebergLevel iceberg = DetectIcebergAdvanced(0); // Cek candle terbaru
-        if (iceberg == ICE_STRONG)
+        IcebergResult iceberg = DetectIcebergUltimate(PERIOD_M5, PERIOD_H1, 0);
+        if (iceberg.level == ICE_STRONG)
             baseConfidence += 0.15;
-        else if (iceberg == ICE_WEAK)
+        else if (iceberg.level == ICE_WEAK)
             baseConfidence += 0.05;
 
         return MathMin(baseConfidence, 0.95); // Cap at 95%
@@ -305,7 +304,7 @@ namespace RiskManager
         double actualMaxLot = MaxLot;
         if (isPremiumSignal)
         {
-            actualMaxLot = MaxLot * 3.0; // 3x dari normal
+            actualMaxLot = MaxLot * 5.0; // 3x dari normal
             Print("PREMIUM SIGNAL: Using enhanced MaxLot = ", actualMaxLot);
         }
 
@@ -343,7 +342,7 @@ namespace RiskManager
         if (confidence < 0.8)
             return GetDynamicLot(confidence, stopLossPips, symbol, false);
 
-        double premiumRiskPercent = RiskPercent * 2.0; // 2x risk normal
+        double premiumRiskPercent = RiskPercent * 3.0; // 2x risk normal
         double balance = GetBalance();
         double riskMoney = balance * (premiumRiskPercent / 100.0);
         double pipValue = GetPipValue(symbol);
@@ -710,138 +709,156 @@ enum TierType
     TIER_MOMENTUM,
     TIER_OBSIGNAL,
     TIER_PBX,
-    TIER_TLB
+    TIER_TLB,
+    TIER_SRPA
 };
 
+// --- Trading Flow utama ---
 void ExecuteTradingFlow()
 {
-    bool tradeExecuted = true;
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Ultra Tier", TIER_ULTRA);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Ultra ADX_RSI_BB Tier", TIER_ADX_RSI_BB);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("OB SIGNAL Tier", TIER_OBSIGNAL);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("PBX Tier", TIER_PBX);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("TLB Tier", TIER_TLB);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Sadam Tier", TIER_SADAM);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Power Tier", TIER_POWER);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Enhanced Tier", TIER_ENHANCED);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Advanced Tier", TIER_ADVANCED);
-
-    if (!tradeExecuted)
-        tradeExecuted = ExecuteTierWithFilter("Momentum Tier", TIER_MOMENTUM);
-
-    if (!tradeExecuted)
+    // Jalankan multi-tier scan
+    if (!ExecuteMultiTierScan())
         Print("ℹ️ No valid trade executed this cycle.");
 }
 
-// =================== Integrasi PBX ke Tier ===================
-bool ExecuteTierWithFilter(string tierName, TierType tier)
+// --- Eksekusi Tier dengan Filter SignalEngine ---
+// ================== STRUCT ==================
+struct TierSignalResult
 {
-    bool tradeExecuted = true;
+    string tierName;
+    Dir direction;
+    double confidence;
+    string source;
+    bool valid;
+};
 
-    // Panggil fungsi tier asli (entry logic dasar)
+// ================== CEK 1 TIER ==================
+bool ExecuteTierWithFilter(string tierName, TierType tier,
+                           Dir &outDirection,
+                           double &outConfidence,
+                           string &outSource)
+{
+    bool signalFound = false;
+
+    // --- 1. Jalankan logika dasar tiap tier ---
     switch (tier)
     {
     case TIER_ULTRA:
-        tradeExecuted = ExecuteUltraTier1();
+        signalFound = Tier_OB_DAN_PriceAction();
         break;
-    case TIER_ADX_RSI_BB:  
-        tradeExecuted = ExecuteTIER_ADX_RSI_BB();
+    case TIER_ADX_RSI_BB:
+        signalFound = ExecuteTIER_ADX_RSI_BB();
         break;
     case TIER_SADAM:
-        tradeExecuted = ExecuteSadamTier();
+        signalFound = ExecuteSadamTier();
         break;
     case TIER_POWER:
-        tradeExecuted = ExecutePowerTier2();
+        signalFound = Tier_Momentum_Scalp();
         break;
     case TIER_ENHANCED:
-        tradeExecuted = ExecuteEnhancedTier3();
+        signalFound = Tier_Stochastic();
         break;
     case TIER_ADVANCED:
-        tradeExecuted = ExecuteAdvancedTier4();
+        signalFound = TIER_ADVANCED_PATTERNS();
         break;
     case TIER_MOMENTUM:
-        tradeExecuted = ExecuteMomentumTier5();
+        signalFound = ExecuteMomentumTier5();
         break;
     case TIER_OBSIGNAL:
-        tradeExecuted = OB_Signal();
+        signalFound = OB_Signal();
         break;
     case TIER_TLB:
-        tradeExecuted = LuxAlgoTrendLinesWithBreak();
+        signalFound = LuxAlgoTrendLinesWithBreak();
         break;
     case TIER_PBX:
-        tradeExecuted = ExecutePBXHybridFlow();
+        signalFound = ExecutePBXHybridFlow();
+        break;
+    case TIER_SRPA:
+        signalFound = Tier_SRPA(outDirection, outConfidence, outSource);
         break;
     }
 
-    // =================== PBX Pullback Filter ===================
-    if (tradeExecuted)
+    // --- 2. Validasi ke SignalEngine ---
+    if (signalFound)
     {
-        PBX_SignalResult pbxSignal = PBX_DetectSignal(); // fungsi PBX canggih kita
-        if (pbxSignal.signal == PBX_NONE)
+        if (!engine.GetConsensusSignal(outDirection, outConfidence, outSource))
         {
-            PrintFormat("⚠️ %s blocked - No valid PBX pullback signal", tierName);
+            PrintFormat("⚠️ %s blocked - No consensus from SignalEngine", tierName);
             return false;
         }
 
-        // =================== SignalEngine Filter ===================
-        Dir confirmDir;
-        double confidence;
-        string signalSource;
-
-        if (!engine.GetConsensusSignal(confirmDir, confidence, signalSource))
+        if (outConfidence < 0.6)
         {
-            PrintFormat("⚠️ %s blocked - SignalEngine skip (News/OB active)", tierName);
+            PrintFormat("❌ %s blocked - Low confidence (%.2f)", tierName, outConfidence);
             return false;
         }
 
-        if (confidence < 0.6)
-        {
-            PrintFormat("❌ %s blocked by SignalEngine (confidence=%.2f)", tierName, confidence);
-            return false;
-        }
+        PrintFormat("✅ %s confirmed by SignalEngine (Consensus: %s, Confidence=%.2f, Source=%s)",
+                    tierName,
+                    (outDirection == DIR_BUY ? "BUY" : "SELL"),
+                    outConfidence,
+                    outSource);
 
-        PrintFormat("✅ %s confirmed by SignalEngine & PBX (confidence=%.2f)", tierName, confidence);
+        return true;
+    }
 
-        // =================== Setup SL + TP ===================
-        double entryPrice = pbxSignal.entry;
-        double slPips = MathMax((pbxSignal.signal == PBX_BUY)
-                                    ? (entryPrice - pbxSignal.sl) / _Point
-                                    : (pbxSignal.sl - entryPrice) / _Point,
-                                50);                // minimal 50 pips
-        double tpPips = MathMax(slPips * 1.5, 100); // minimal RR 1:1.5 / 100 pips
+    return false;
+}
 
-        // =================== Order Placement ===================
-        if (pbxSignal.signal == PBX_BUY)
+// ================== MULTI-TIER SCAN ==================
+bool ExecuteMultiTierScan()
+{
+    TierSignalResult bestSignal;
+    bestSignal.confidence = -1;
+    bestSignal.valid = false;
+
+    TierType tiers[] = {
+        TIER_ULTRA, TIER_ADX_RSI_BB, TIER_SADAM, TIER_POWER,
+        TIER_ENHANCED, TIER_ADVANCED, TIER_MOMENTUM,
+        TIER_OBSIGNAL, TIER_TLB, TIER_PBX, TIER_SRPA};
+
+    string tierNames[] = {
+        "Ultra Tier", "ADX+RSI+BB", "Sadam Tier", "Power Momentum",
+        "Stochastic", "Advanced Pattern", "Momentum V5",
+        "OB Signal", "TrendLine Break", "PullbackX", "SR+PA Tier"}; // <-- baru
+
+    // --- Scan semua tier ---
+    for (int i = 0; i < ArraySize(tiers); i++)
+    {
+        Dir dir;
+        double conf;
+        string src;
+
+        if (ExecuteTierWithFilter(tierNames[i], tiers[i], dir, conf, src))
         {
-            ExecuteBuy(2.0, (int)slPips, (int)tpPips, tierName + " PBX BUY");
-            tradeExecuted = true;
-        }
-        else if (pbxSignal.signal == PBX_SELL)
-        {
-            ExecuteSell(2.0, (int)slPips, (int)tpPips, tierName + " PBX SELL");
-            tradeExecuted = true;
+            if (conf > bestSignal.confidence)
+            {
+                bestSignal.tierName = tierNames[i];
+                bestSignal.direction = dir;
+                bestSignal.confidence = conf;
+                bestSignal.source = src;
+                bestSignal.valid = true;
+            }
         }
     }
 
-    return tradeExecuted;
+    // --- Pilih sinyal terbaik ---
+    if (bestSignal.valid)
+    {
+        PrintFormat("🚀 FINAL SIGNAL SELECTED: %s (Dir=%s, Confidence=%.2f, Source=%s)",
+                    bestSignal.tierName,
+                    (bestSignal.direction == DIR_BUY ? "BUY" : "SELL"),
+                    bestSignal.confidence,
+                    bestSignal.source);
+
+        // Eksekusi order disini
+        // PlaceOrder(bestSignal.direction, bestSignal.confidence);
+
+        return true;
+    }
+
+    Print("❌ No strong signal found across all tiers.");
+    return false;
 }
 
 void OnTick()
@@ -1347,9 +1364,9 @@ bool AdvancedProfitFilter()
     Print("✅ AUTO-APPROVED: High Profit Opportunity");
     return true;
 }
-bool ExecuteUltraTier1()
+bool Tier_OB_DAN_PriceAction()
 {
-    // 1. ORDER BLOCK SUPER FILTERED
+    // 1. ORDER BLOCK SUPER FILTERED UPGRADE KE SMC
     static datetime lastOBCheck = 0;
     if (UseOrderBlock || (TimeCurrent() - lastOBCheck >= 3600))
     {
@@ -1366,7 +1383,7 @@ bool ExecuteUltraTier1()
                 // PERBAIKAN: Direct execution tanpa if condition
                 if (obSignal.signal == DIR_BUY)
                 {
-                    string signalSource = "ORDER BLOCK SUPER FILTERED";
+                    string signalSource = "ORDER BLOCK SUPER FILTERED ";
                     int slPips = (int)((obSignal.entryPrice - obSignal.stopLoss) / _Point / 10);
                     int tpPips = (int)((obSignal.takeProfit - obSignal.entryPrice) / _Point / 10);
                     ExecuteBuy(optimalLot, slPips, tpPips, signalSource); // LANGSUNG EXECUTE
@@ -1381,7 +1398,7 @@ bool ExecuteUltraTier1()
                 }
                 else
                 {
-                    string signalSource = "ORDER BLOCK SUPER FILTERED";
+                    string signalSource = "ORDER BLOCK SUPER FILTERED SMC";
                     int slPips = (int)((obSignal.stopLoss - obSignal.entryPrice) / _Point / 10);
                     int tpPips = (int)((obSignal.entryPrice - obSignal.takeProfit) / _Point / 10);
                     ExecuteSell(optimalLot, slPips, tpPips, signalSource); // LANGSUNG EXECUTE
@@ -1424,9 +1441,9 @@ bool ExecuteUltraTier1()
     return false;
 }
 
-bool ExecutePowerTier2()
+bool Tier_Momentum_Scalp()
 {
-   bool  executed = false;
+    bool executed = false;
     // 4. MOMENTUM SCALPING ENHANCED
     static datetime lastMomentumCheck = 0;
     if (UseMomentumPullback && (TimeCurrent() - lastMomentumCheck >= 3))
@@ -1473,7 +1490,7 @@ bool ExecutePowerTier2()
 
     return executed;
 }
-bool ExecuteEnhancedTier3()
+bool Tier_Stochastic()
 {
     // 8. STOCHASTIC POWER UPGRADE
     static datetime lastStochCheck = 0;
@@ -1482,8 +1499,8 @@ bool ExecuteEnhancedTier3()
         StochSignal stochSignal = GetStochasticSignalUltimateAdvanced(Stoch_TFLow, Stoch_TFHigh, Stoch_KPeriod, Stoch_DPeriod, Stoch_Slowing, Stoch_EMAPeriod, Stoch_ATR_Multiplier, 0);
 
         if ((stochSignal.signal != DIR_NONE && stochSignal.isStrong &&
-             IsStochasticPower(stochSignal)) ||
-            IsSignalInTrend(stochSignal.signal) || HasVolumeConfirmation())
+             IsStochasticPower(stochSignal)) &&
+            IsSignalInTrend(stochSignal.signal) && HasVolumeConfirmation())
         {
             double stochLot = RiskManager::GetDynamicLot(0.6,
                                                          (int)((stochSignal.entryPrice - stochSignal.stopLoss) / _Point / 10));
@@ -1514,15 +1531,15 @@ bool ExecuteEnhancedTier3()
 }
 
 // ==================== NEW TIER 4: ADVANCED PATTERNS ====================
-bool ExecuteAdvancedTier4()
+bool TIER_ADVANCED_PATTERNS()
 {
     bool executed = false;
 
     // 9. CHART PATTERNS ULTIMATE
     static datetime lastChartCheck = 0;
-    if (TimeCurrent() - lastChartCheck >= 300) // Setiap 5 menit
+    if (TimeCurrent() - lastChartCheck >= 900) // Setiap 5 menit
     {
-        ChartPatternSignal chartSignal = GetChartPatternSignalUltimate(1, 10, PERIOD_M15);
+        ChartPatternSignal chartSignal = GetChartPatternSignalUltimate(1, 10, PERIOD_H1);
 
         if (chartSignal.signal != DIR_NONE && chartSignal.isStrong && IsSignalInTrend(chartSignal.signal))
         {
@@ -1642,12 +1659,22 @@ bool ExecuteMomentumTier5()
     bool executed = false;
 
     // 12. ICEBERG VOLUME DETECTION
+    //     Iceberg Volume → deteksi ada “big player” (institusi, bank, hedge fund) yang masuk pasar.
+    // Biasanya ditandai dengan lonjakan volume abnormal tapi harga nggak bergerak jauh (artinya ada order besar yang disembunyikan/dipecah).
+
+    // Ini nunjukin liquidity hunting atau entry institusi.
+
+    // Momentum Pullback → konfirmasi arah setelah ada “akumulasi besar”.
+
+    // Bukan hanya volume, tapi dilihat apakah harga bergerak searah trend setelah koreksi.
+
+    // Jadi EA nggak asal entry, melainkan ikut arus saat smart money sudah “dorong harga” ke arah tertentu.
     static datetime lastIcebergCheck = 0;
     if (TimeCurrent() - lastIcebergCheck >= 60) // Setiap 1 menit
     {
-        IcebergLevel iceberg = DetectIcebergAdvanced(0); // Current candle
+        IcebergResult iceberg = DetectIcebergUltimate(PERIOD_M5, PERIOD_H1, 0); // Current candle
 
-        if (iceberg == ICE_STRONG)
+        if (iceberg.level == ICE_STRONG)
         {
             // Ambil sinyal dari momentum untuk konfirmasi arah
             MomentumSignal momentumSignal;
@@ -1741,7 +1768,7 @@ void ManageAdvancedRisk()
     static datetime lastRiskCheck = 0;
     if (TimeCurrent() - lastRiskCheck >= 1)
     {
-        ManageTrailingBreakCloseUltimate();
+        // ManageTrailingBreakCloseUltimate();
 
         static bool riskAlertSent = false;
         if (!RiskManager::CanOpenTrade())
@@ -1763,20 +1790,20 @@ void ManageAdvancedRisk()
 
 // MANAGE TRALING STOP
 
-input double BE_Pips        = 10;   
-input double BE_Buffer      = 2;    
-input double TrailLevel1    = 15;
+input double BE_Pips = 10;
+input double BE_Buffer = 2;
+input double TrailLevel1 = 15;
 input double TrailDistance1 = 5;
-input double TrailLevel2    = 30;
+input double TrailLevel2 = 30;
 input double TrailDistance2 = 10;
-input int LevelsCount       = 2;
+input int LevelsCount = 2;
 input ENUM_TIMEFRAMES ConfirmTF = PERIOD_M5;
-input bool UseTrendFilter   = true;
+input bool UseTrendFilter = true;
 
-input double MinProfitForAutoClean = 5;          
-input ENUM_TIMEFRAMES AutoCleanTF = PERIOD_M1;   
-input double MinBodyPips = 2;                    
-input int TrendEMAPeriod = 200;                  
+input double MinProfitForAutoClean = 2;
+input ENUM_TIMEFRAMES AutoCleanTF = PERIOD_M1;
+input double MinBodyPips = 2;
+input int TrendEMAPeriod = 200;
 
 struct TrailingUltimateParams
 {
@@ -1791,139 +1818,268 @@ struct TrailingUltimateParams
 
 double StochTrailingStop(double price, double currentSL, bool isBuy, double atr, double factor)
 {
-    if(isBuy) return price - atr*factor;
-    else       return price + atr*factor;
+    if (isBuy)
+        return price - atr * factor;
+    else
+        return price + atr * factor;
 }
 
 void ManageTrailingBreakCloseUltimate()
 {
     TrailingUltimateParams params;
-    params.bePips        = BE_Pips;
-    params.beBuffer      = BE_Buffer;
+    params.bePips = BE_Pips;
+    params.beBuffer = BE_Buffer;
     params.trailLevels[0] = TrailLevel1;
     params.trailDistances[0] = TrailDistance1;
     params.trailLevels[1] = TrailLevel2;
     params.trailDistances[1] = TrailDistance2;
-    params.levelsCount   = LevelsCount;
-    params.tfConfirm     = ConfirmTF;
-    params.useTrendFilter= UseTrendFilter;
+    params.levelsCount = LevelsCount;
+    params.tfConfirm = ConfirmTF;
+    params.useTrendFilter = UseTrendFilter;
 
     double emaTrend = iMA(_Symbol, PERIOD_CURRENT, TrendEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
 
-    for(int i=PositionsTotal()-1; i>=0; i--)
+    for (int i = PositionsTotal() - 1; i >= 0; i--)
     {
-        if(!PositionGetTicket(i)) continue;
+        if (!PositionGetTicket(i))
+            continue;
 
-        ulong  ticket = PositionGetInteger(POSITION_TICKET);
-        long   type   = PositionGetInteger(POSITION_TYPE);
-        double entry  = PositionGetDouble(POSITION_PRICE_OPEN);
+        ulong ticket = PositionGetInteger(POSITION_TICKET);
+        long type = PositionGetInteger(POSITION_TYPE);
+        double entry = PositionGetDouble(POSITION_PRICE_OPEN);
         double currentSL = PositionGetDouble(POSITION_SL);
         double currentTP = PositionGetDouble(POSITION_TP);
         double volume = PositionGetDouble(POSITION_VOLUME);
 
-        double price = (type==POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol,SYMBOL_BID)
-                                                 : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+        // PERBAIKI PERHITUNGAN PROFIT YANG LEBIH AMAN
+        double bidPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+        double askPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+        double price = (type == POSITION_TYPE_BUY) ? bidPrice : askPrice;
 
-        double profitPips = (type==POSITION_TYPE_BUY) ? (price-entry)/_Point : (entry-price)/_Point;
-        if(_Digits==5 || _Digits==3) profitPips/=10.0;
+        // Debug informasi position
+        PrintFormat("DEBUG: Ticket %d, Type=%s, Entry=%.5f, Bid=%.5f, Ask=%.5f, CurrentPrice=%.5f",
+                    ticket, (type == POSITION_TYPE_BUY) ? "BUY" : "SELL", entry, bidPrice, askPrice, price);
+
+        // PERHITUNGAN PROFIT YANG LEBIH AMAN DENGAN VALIDASI
+        double profitPoints = (type == POSITION_TYPE_BUY) ? (price - entry) : (entry - price);
+        double profitPips = profitPoints / _Point;
+
+        // Konversi untuk broker 5/3 digit
+        if (_Digits == 5 || _Digits == 3)
+            profitPips /= 10.0;
+
+        // VALIDASI EKSTENSIF UNTUK MENDETEKSI DATA CORRUPT
+        double maxReasonableProfit = 1000.0; // Maksimal 1000 pips realistic
+        double priceDiff = MathAbs(price - entry);
+
+        // Validasi 1: Periksa apakah harga saat ini realistic
+        bool priceValid = (price > 0.1 && price < 1000.0); // Range realistic untuk forex
+        bool entryValid = (entry > 0.1 && entry < 1000.0);
+        bool diffValid = (priceDiff < 0.1); // Max 1000 pips difference (0.1 untuk JPY pairs)
+
+        // Validasi 2: Periksa apakah profit realistic
+        if (!priceValid || !entryValid || !diffValid || profitPips < -1000 || profitPips > maxReasonableProfit)
+        {
+            PrintFormat("❌ ERROR: Profit calculation abnormal! Ticket %d, Profit=%.1f pips", ticket, profitPips);
+            PrintFormat("❌ DETAILS: Type=%s, Entry=%.5f, Price=%.5f, Diff=%.5f, PriceValid=%d, EntryValid=%d, DiffValid=%d",
+                        (type == POSITION_TYPE_BUY) ? "BUY" : "SELL", entry, price, priceDiff, priceValid, entryValid, diffValid);
+
+            // Coba dapatkan profit actual dari broker
+            double actualProfit = PositionGetDouble(POSITION_PROFIT);
+            PrintFormat("❌ ACTUAL PROFIT from broker: %.2f", actualProfit);
+            continue;
+        }
+
+        // VALIDASI TAMBAHAN: Skip jika profit kurang dari 2 pip
+        if (profitPips < 2.0)
+        {
+            PrintFormat("⏩ Skip trailing: Ticket %d, Profit %.1f pips", ticket, profitPips);
+            continue;
+        }
 
         double newSL = currentSL;
-        bool slChanged=false;
+        bool slChanged = false;
 
-        //--- Break-Even
-        if(profitPips >= params.bePips)
+        //--- 1. BREAK-EVEN LOGIC (DIPERBAIKI)
+        if (profitPips >= params.bePips && currentSL < entry)
         {
-            double beLevel = (type==POSITION_TYPE_BUY) ? entry+params.beBuffer*_Point
-                                                       : entry-params.beBuffer*_Point;
-            if(currentSL==0 || (type==POSITION_TYPE_BUY && beLevel>currentSL) || (type==POSITION_TYPE_SELL && beLevel<currentSL))
+            double beLevel = (type == POSITION_TYPE_BUY) ? entry + (params.beBuffer * _Point)
+                                                         : entry - (params.beBuffer * _Point);
+
+            // Validasi BE level aman
+            double minGapFromPrice = 3.0 * _Point; // Minimal 3 point dari price saat ini
+            if ((type == POSITION_TYPE_BUY && beLevel < price - minGapFromPrice) ||
+                (type == POSITION_TYPE_SELL && beLevel > price + minGapFromPrice))
             {
-                newSL = beLevel; slChanged=true;
-                PrintFormat("✅ BE Triggered: Ticket %d, BE Level=%.5f", ticket, beLevel);
+                if ((type == POSITION_TYPE_BUY && beLevel > newSL) ||
+                    (type == POSITION_TYPE_SELL && beLevel < newSL))
+                {
+                    newSL = beLevel;
+                    slChanged = true;
+                    PrintFormat("✅ BE Triggered: Ticket %d, BE Level=%.5f, Profit=%.1f pips", ticket, beLevel, profitPips);
+                }
             }
         }
 
-        //--- Trailing Stop Multi-Level
-        for(int lvl=0; lvl<params.levelsCount; lvl++)
+        //--- 2. TRAILING STOP MULTI-LEVEL (DIPERBAIKI)
+        for (int lvl = 0; lvl < params.levelsCount; lvl++)
         {
-            if(profitPips >= params.trailLevels[lvl])
+            if (profitPips >= params.trailLevels[lvl])
             {
-                double trailDistance = params.trailDistances[lvl]*_Point;
-                double trailSL = (type==POSITION_TYPE_BUY) ? price-trailDistance : price+trailDistance;
+                double trailDistance = params.trailDistances[lvl] * _Point;
+                double trailSL = (type == POSITION_TYPE_BUY) ? price - trailDistance : price + trailDistance;
 
-                if(type==POSITION_TYPE_BUY && (currentSL==0 || trailSL>newSL) && (price-trailSL)>(2*_Point))
-                    { newSL=trailSL; slChanged=true; PrintFormat("✅ Trailing BUY: Ticket %d, New SL=%.5f",ticket,newSL);}
-                if(type==POSITION_TYPE_SELL && (currentSL==0 || trailSL<newSL) && (trailSL-price)>(2*_Point))
-                    { newSL=trailSL; slChanged=true; PrintFormat("✅ Trailing SELL: Ticket %d, New SL=%.5f",ticket,newSL);}
+                // Validasi trailing SL aman
+                double minGap = 5.0 * _Point; // Minimal 5 point
+                bool isValid = false;
+
+                if (type == POSITION_TYPE_BUY)
+                {
+                    isValid = (trailSL > newSL) &&
+                              (trailSL < price - minGap) &&
+                              (currentSL == 0 || trailSL > currentSL);
+                }
+                else // SELL
+                {
+                    isValid = (trailSL < newSL) &&
+                              (trailSL > price + minGap) &&
+                              (currentSL == 0 || trailSL < currentSL);
+                }
+
+                if (isValid)
+                {
+                    newSL = trailSL;
+                    slChanged = true;
+                    PrintFormat("✅ Trailing Lvl%d: Ticket %d, New SL=%.5f, Profit=%.1f pips",
+                                lvl + 1, ticket, newSL, profitPips);
+                }
             }
         }
 
-        //--- ATR-based Trailing
-        int atrPeriod=14;
-        ENUM_TIMEFRAMES atrTF=PERIOD_M15;
-        double trailFactor=1.5;
-        int atrHandle=iATR(_Symbol, atrTF, atrPeriod);
-        if(atrHandle!=INVALID_HANDLE)
+        //--- 3. ATR-BASED TRAILING (DIPERBAIKI)
+        int atrPeriod = 14;
+        ENUM_TIMEFRAMES atrTF = PERIOD_M15;
+        double trailFactor = 1.5;
+        int atrHandle = iATR(_Symbol, atrTF, atrPeriod);
+
+        if (atrHandle != INVALID_HANDLE && profitPips > 10.0) // Hanya jika profit > 10 pips
         {
             double atrArr[];
-            ArraySetAsSeries(atrArr,true);
-            if(CopyBuffer(atrHandle,0,0,1,atrArr)>0)
+            ArraySetAsSeries(atrArr, true);
+            if (CopyBuffer(atrHandle, 0, 0, 1, atrArr) > 0)
             {
                 double atr = atrArr[0];
-                if(atr>0)
+                if (atr > 0)
                 {
-                    double stochSL = StochTrailingStop(price,newSL,type==POSITION_TYPE_BUY,atr,trailFactor);
-                    if(MathAbs(stochSL-newSL)>(1*_Point)) { newSL=stochSL; slChanged=true; PrintFormat("✅ ATR Trail: Ticket %d, ATR=%.1f, New SL=%.5f",ticket,atr,newSL);}
+                    double atrSL = (type == POSITION_TYPE_BUY) ? price - (atr * trailFactor)
+                                                               : price + (atr * trailFactor);
+
+                    // Validasi ATR SL
+                    bool atrValid = false;
+                    if (type == POSITION_TYPE_BUY)
+                        atrValid = (atrSL > newSL) && (atrSL < price - (2.0 * _Point));
+                    else
+                        atrValid = (atrSL < newSL) && (atrSL > price + (2.0 * _Point));
+
+                    if (atrValid && MathAbs(atrSL - newSL) > (1 * _Point))
+                    {
+                        newSL = atrSL;
+                        slChanged = true;
+                        PrintFormat("✅ ATR Trail: Ticket %d, ATR=%.5f, New SL=%.5f", ticket, atr, newSL);
+                    }
                 }
             }
             IndicatorRelease(atrHandle);
         }
 
-        //--- Update SL
-        if(slChanged && newSL!=currentSL)
+        //--- 4. UPDATE SL (DENGAN VALIDASI EKSTRA)
+        if (slChanged && newSL != currentSL)
         {
-            MqlTradeRequest req;
-            MqlTradeResult res;
-            ZeroMemory(req); ZeroMemory(res);
-            req.action=TRADE_ACTION_SLTP;
-            req.position=ticket;
-            req.sl=NormalizeDouble(newSL,_Digits);
-            req.tp=currentTP;
-            req.deviation=10;
-            if(OrderSend(req,res)) PrintFormat("✅ SL Updated: Ticket %d, New SL=%.5f (Profit %.1f pips)",ticket,newSL,profitPips);
-        }
+            // FINAL VALIDATION - pastikan SL tidak terlalu dekat
+            double safeDistance = 2.0 * _Point;
+            bool finalCheck = false;
 
-        //--- Advanced AutoClean
-        if(profitPips >= MinProfitForAutoClean)
-        {
-            double prevOpen  = iOpen(_Symbol, AutoCleanTF, 1);
-            double prevClose = iClose(_Symbol, AutoCleanTF, 1);
-            double bodyPips  = MathAbs(prevClose-prevOpen)/_Point; if(_Digits==5||_Digits==3) bodyPips/=10.0;
-            bool pullback=false;
+            if (type == POSITION_TYPE_BUY)
+                finalCheck = (newSL < price - safeDistance) && (newSL > 0);
+            else
+                finalCheck = (newSL > price + safeDistance) && (newSL > 0);
 
-            if(type==POSITION_TYPE_BUY && prevClose<prevOpen && bodyPips>=MinBodyPips) pullback=true;
-            if(type==POSITION_TYPE_SELL && prevClose>prevOpen && bodyPips>=MinBodyPips) pullback=true;
-
-            if(params.useTrendFilter)
-            {
-                if(type==POSITION_TYPE_BUY && price<emaTrend) pullback=true;
-                if(type==POSITION_TYPE_SELL && price>emaTrend) pullback=true;
-            }
-
-            if(pullback)
+            if (finalCheck)
             {
                 MqlTradeRequest req;
                 MqlTradeResult res;
-                ZeroMemory(req); ZeroMemory(res);
-                req.action=TRADE_ACTION_DEAL;
-                req.symbol=_Symbol;
-                req.volume=volume;
-                req.type=(type==POSITION_TYPE_BUY)?ORDER_TYPE_SELL:ORDER_TYPE_BUY;
-                req.price=(type==POSITION_TYPE_BUY)?SymbolInfoDouble(_Symbol,SYMBOL_BID):SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-                req.position=ticket;
-                req.deviation=20;
+                ZeroMemory(req);
+                ZeroMemory(res);
+                req.action = TRADE_ACTION_SLTP;
+                req.position = ticket;
+                req.sl = NormalizeDouble(newSL, _Digits);
+                req.tp = currentTP; // Pertahankan TP original
+                req.deviation = 10;
 
-                if(OrderSend(req,res))
-                    PrintFormat("🚨 Advanced AutoClean: Ticket %d closed, Profit %.1f pips, Candle body %.1f pips",ticket,profitPips,bodyPips);
+                if (OrderSend(req, res))
+                {
+                    PrintFormat("🎯 SL Updated Success: Ticket %d, New SL=%.5f, Profit=%.1f pips",
+                                ticket, newSL, profitPips);
+                }
+                else
+                {
+                    PrintFormat("❌ SL Update Failed: Ticket %d, Error=%d", ticket, GetLastError());
+                }
+            }
+            else
+            {
+                PrintFormat("⚠️ SL Update Skipped: Ticket %d, SL too close to price (NewSL=%.5f, Price=%.5f)",
+                            ticket, newSL, price);
+            }
+        }
+
+        //--- 5. ADVANCED AUTOCLEAN (DIPERBAIKI)
+        if (profitPips >= MinProfitForAutoClean && profitPips > 5.0) // Minimal 5 pips profit
+        {
+            double prevOpen = iOpen(_Symbol, AutoCleanTF, 1);
+            double prevClose = iClose(_Symbol, AutoCleanTF, 1);
+            double bodyPips = MathAbs(prevClose - prevOpen) / _Point;
+            if (_Digits == 5 || _Digits == 3)
+                bodyPips /= 10.0;
+
+            bool pullback = false;
+
+            // Validasi candle reversal kuat
+            if (type == POSITION_TYPE_BUY && prevClose < prevOpen && bodyPips >= MinBodyPips)
+                pullback = true;
+            if (type == POSITION_TYPE_SELL && prevClose > prevOpen && bodyPips >= MinBodyPips)
+                pullback = true;
+
+            // Trend filter tambahan
+            if (params.useTrendFilter)
+            {
+                if (type == POSITION_TYPE_BUY && price < emaTrend)
+                    pullback = true;
+                if (type == POSITION_TYPE_SELL && price > emaTrend)
+                    pullback = true;
+            }
+
+            // Validasi profit cukup besar sebelum close
+            if (pullback && profitPips >= 3.0) // Minimal 3 pips profit untuk autoclean
+            {
+                MqlTradeRequest req;
+                MqlTradeResult res;
+                ZeroMemory(req);
+                ZeroMemory(res);
+                req.action = TRADE_ACTION_DEAL;
+                req.symbol = _Symbol;
+                req.volume = volume;
+                req.type = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+                req.price = (type == POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                                                        : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+                req.position = ticket;
+                req.deviation = 20;
+
+                if (OrderSend(req, res))
+                {
+                    PrintFormat("🚨 AutoClean: Ticket %d closed, Profit %.1f pips, Body %.1f pips",
+                                ticket, profitPips, bodyPips);
+                }
             }
         }
     }
@@ -3054,95 +3210,101 @@ enum IcebergLevel
 };
 
 //+------------------------------------------------------------------+
-//| Input Parameters untuk Iceberg                                  |
+//| Struct hasil deteksi Iceberg                                    |
 //+------------------------------------------------------------------+
-input int LookbackCandlesAdvanced = 20;      // Lookback untuk volume average
-input double VolumeMultiplierAdvanced = 2.0; // Multiplier untuk spike volume
-
-//==================================================================
-// Fungsi: DetectIcebergSimple
-// Parameter: idx = candle index
-// Return: true jika volume > 2x volume sebelumnya
-//==================================================================
-bool DetectIcebergSimple(int idx)
+struct IcebergResult
 {
-    double volCurrent = (double)iVolume(_Symbol, PERIOD_CURRENT, idx);
-    double volPrev = (double)iVolume(_Symbol, PERIOD_CURRENT, idx + 1);
-    return (volCurrent >= volPrev * 2.0);
-}
+    IcebergLevel level; // NONE / WEAK / STRONG
+    double score;       // 0 - 100 (% probabilitas)
+};
+
+//+------------------------------------------------------------------+
+//| Input Parameters                                                |
+//+------------------------------------------------------------------+
+input int LookbackCandles = 20;           // Lookback rata-rata volume
+input double VolumeMultiplier = 2.0;      // Multiplier spike
+input ENUM_TIMEFRAMES FastTF = PERIOD_M5; // TF cepat
+input ENUM_TIMEFRAMES SlowTF = PERIOD_H1; // TF lambat
 
 //==================================================================
-// Fungsi: DetectIcebergAdvanced
-// Parameter: idx = candle index
-// Return: IcebergLevel (NONE, WEAK, STRONG)
+// Fungsi: DetectIcebergUltimate
+// Param : tfFast, tfSlow = timeframe, idx = index candle
+// Return: IcebergResult {level, score}
+// Deskripsi:
+//   - Gabungan simple, advanced, multiTF
+//   - Beri output level + probabilitas
 //==================================================================
-IcebergLevel DetectIcebergAdvanced(int idx)
+IcebergResult DetectIcebergUltimate(ENUM_TIMEFRAMES tfFast, ENUM_TIMEFRAMES tfSlow, int idx)
 {
-    double sumVolume = 0;
-    int lookback = LookbackCandlesAdvanced;
+    IcebergResult result;
+    result.level = ICE_NONE;
+    result.score = 0.0;
 
-    if (Bars(_Symbol, PERIOD_CURRENT) <= lookback)
-        return ICE_NONE;
+    // -------------------------
+    // 1. SIMPLE CHECK (Prev Candle)
+    // -------------------------
+    double volFastNow = (double)iVolume(_Symbol, tfFast, idx);
+    double volFastPrev = (double)iVolume(_Symbol, tfFast, idx + 1);
+    bool simpleSpike = (volFastNow >= volFastPrev * 2.0);
 
-    for (int i = idx + 1; i <= idx + lookback; i++)
-        sumVolume += (double)iVolume(_Symbol, PERIOD_CURRENT, i);
+    // -------------------------
+    // 2. ADVANCED CHECK (Avg Volume)
+    // -------------------------
+    if (Bars(_Symbol, tfFast) <= LookbackCandles)
+        return result;
 
-    double avgVolume = sumVolume / lookback;
-    double lastVolume = (double)iVolume(_Symbol, PERIOD_CURRENT, idx);
+    double sumVolFast = 0;
+    for (int i = idx + 1; i <= idx + LookbackCandles; i++)
+        sumVolFast += (double)iVolume(_Symbol, tfFast, i);
 
-    if (lastVolume >= avgVolume * VolumeMultiplierAdvanced * 1.5)
-        return ICE_STRONG;
-    else if (lastVolume >= avgVolume * VolumeMultiplierAdvanced)
-        return ICE_WEAK;
+    double avgVolFast = sumVolFast / LookbackCandles;
+    bool advWeak = (volFastNow >= avgVolFast * VolumeMultiplier);
+    bool advStrong = (volFastNow >= avgVolFast * VolumeMultiplier * 1.5);
 
-    return ICE_NONE;
-}
+    // -------------------------
+    // 3. SLOW TF CHECK (MultiTF)
+    // -------------------------
+    if (Bars(_Symbol, tfSlow) <= LookbackCandles)
+        return result;
 
-//==================================================================
-// Fungsi: DetectIcebergMultiTF
-// Parameter: tfFast, tfSlow = timeframe, idx = candle index
-// Return: IcebergLevel
-// Deskripsi: gabungkan deteksi di dua timeframe
-//==================================================================
-IcebergLevel DetectIcebergMultiTF(ENUM_TIMEFRAMES tfFast, ENUM_TIMEFRAMES tfSlow, int idx)
-{
-    IcebergLevel fast = DetectIcebergAdvanced(idx); // TF current
-    // switch symbol ke slow TF
-    double sumVolumeSlow = 0;
-    int lookback = LookbackCandlesAdvanced;
-    if (Bars(_Symbol, tfSlow) <= lookback)
-        return ICE_NONE;
-    for (int i = idx + 1; i <= idx + lookback; i++)
-        sumVolumeSlow += (double)iVolume(_Symbol, tfSlow, i);
-    double avgVolumeSlow = sumVolumeSlow / lookback;
-    double lastVolumeSlow = (double)iVolume(_Symbol, tfSlow, idx);
+    double sumVolSlow = 0;
+    for (int i = idx + 1; i <= idx + LookbackCandles; i++)
+        sumVolSlow += (double)iVolume(_Symbol, tfSlow, i);
 
-    bool slowSpike = lastVolumeSlow >= avgVolumeSlow * VolumeMultiplierAdvanced;
+    double avgVolSlow = sumVolSlow / LookbackCandles;
+    double volSlowNow = (double)iVolume(_Symbol, tfSlow, idx);
+    bool slowSpike = (volSlowNow >= avgVolSlow * VolumeMultiplier);
 
-    // Gabungkan logika: jika keduanya spike → STRONG, jika salah satu → WEAK
-    if (fast == ICE_STRONG && slowSpike)
-        return ICE_STRONG;
-    if (fast != ICE_NONE || slowSpike)
-        return ICE_WEAK;
+    // -------------------------
+    // 4. HITUNG SKOR PROBABILITAS
+    // -------------------------
+    double score = 0.0;
 
-    return ICE_NONE;
-}
+    if (simpleSpike)
+        score += 25.0; // simple spike kuat
+    if (advWeak)
+        score += 30.0; // weak confirm
+    if (advStrong)
+        score += 50.0; // strong confirm
+    if (slowSpike)
+        score += 40.0; // multiTF confirm
 
-//==================================================================
-// Fungsi: PrintIcebergSignal
-// Parameter: idx = candle index
-//==================================================================
-void PrintIcebergSignal(int idx)
-{
-    bool simple = DetectIcebergSimple(idx);
-    IcebergLevel adv = DetectIcebergAdvanced(idx);
-    IcebergLevel multi = DetectIcebergMultiTF(PERIOD_M5, PERIOD_H1, idx);
+    if (score > 100.0)
+        score = 100.0;
 
-    string sAdv = (adv == ICE_STRONG ? "STRONG" : (adv == ICE_WEAK ? "WEAK" : "NONE"));
-    string sMulti = (multi == ICE_STRONG ? "STRONG" : (multi == ICE_WEAK ? "WEAK" : "NONE"));
+    result.score = score;
 
-    PrintFormat("Iceberg | CandleIdx:%d | Simple:%s | Advanced:%s | MultiTF:%s",
-                idx, simple ? "YES" : "NO", sAdv, sMulti);
+    // -------------------------
+    // 5. FINAL DECISION LOGIC
+    // -------------------------
+    if (score >= 70.0)
+        result.level = ICE_STRONG;
+    else if (score >= 40.0)
+        result.level = ICE_WEAK;
+    else
+        result.level = ICE_NONE;
+
+    return result;
 }
 
 //+------------------------------------------------------------------+
@@ -3956,6 +4118,56 @@ Dir GetTrendEMA(ENUM_TIMEFRAMES tf, int emaPeriod)
 //==================================================================
 // Fungsi deteksi OB multi-level + scaling lot (Probabilitas ~80%+)
 //==================================================================
+// ==== Fungsi cek BOS ====
+bool CheckBOS(bool isBuy, int idxHi, int idxLo)
+{
+    // Pastikan indeks valid
+    if (idxHi < 0 || idxLo < 0)
+        return false;
+
+    // gunakan candle tertutup terakhir (shift = 1)
+    double closeNow = iClose(_Symbol, OB_TF1, 1);
+
+    if (isBuy)
+    {
+        double lastHigh = iHigh(_Symbol, OB_TF1, idxHi);
+        return (closeNow > lastHigh);
+    }
+    else
+    {
+        double lastLow = iLow(_Symbol, OB_TF1, idxLo);
+        return (closeNow < lastLow);
+    }
+}
+
+// ==== Fungsi cek Liquidity Sweep ====
+bool CheckLiquiditySweep(bool isBuy, int idxHi, int idxLo)
+{
+    // Pastikan indeks valid
+    if (idxHi < 0 || idxLo < 0)
+        return false;
+
+    double close1 = iClose(_Symbol, OB_TF1, 1);
+    double high1 = iHigh(_Symbol, OB_TF1, 1);
+    double low1 = iLow(_Symbol, OB_TF1, 1);
+
+    if (isBuy)
+    {
+        double swingLow = iLow(_Symbol, OB_TF1, idxLo);
+        // Wick/low menembus swing low lalu candle menutup di atas swingLow
+        if (low1 < swingLow && close1 > swingLow)
+            return true;
+    }
+    else
+    {
+        double swingHigh = iHigh(_Symbol, OB_TF1, idxHi);
+        // Wick/high menembus swing high lalu candle menutup di bawah swingHigh
+        if (high1 > swingHigh && close1 < swingHigh)
+            return true;
+    }
+    return false;
+}
+
 OBSignal DetectOrderBlockPro(double baseLot = 0.01,
                              int emaM1 = 50,
                              int emaM5 = 50,
@@ -3998,76 +4210,109 @@ OBSignal DetectOrderBlockPro(double baseLot = 0.01,
     if (supply <= demand || supply == 0 || demand == 0)
         return sig;
 
-    // Spread sebagai buffer, sesuaikan dengan symbol digit
     double pointSize = _Point;
     double spread = zoneBufferPips * pointSize;
 
-    // Trend filter multi-TF
+    // ==== ATR untuk SL/TP Dinamis ====
+    double atr = iATR(_Symbol, OB_TF1, 14);
+    if (atr <= 0)
+        atr = (supply - demand) / 4.0; // fallback
+
+    // ==== Trend filter multi-TF ====
     Dir trendTF1 = GetTrendEMA(OB_TF1, emaM1);
     Dir trendTF2 = GetTrendEMA(OB_TF2, emaM5);
 
-    // Ambil harga real-time sesuai arah
     double price = (trendTF1 == DIR_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
                                          : SymbolInfoDouble(_Symbol, SYMBOL_BID);
 
     double levelStep = (supply - demand) / levels;
 
-    //==== BUY Multi-level OB ====
-    if (trendTF1 == DIR_BUY && trendTF2 == DIR_BUY)
+    // ==== Validasi tambahan: OB dengan candle impulsif ====
+    bool validOB = false;
+    for (int j = 2; j <= 5; j++) // cek 5 candle terakhir
+    {
+        double body = MathAbs(iClose(_Symbol, OB_TF1, j) - iOpen(_Symbol, OB_TF1, j));
+        double wick = iHigh(_Symbol, OB_TF1, j) - iLow(_Symbol, OB_TF1, j);
+        if (wick > 0 && body / wick > 0.6) // body dominan
+        {
+            validOB = true;
+            break;
+        }
+    }
+    if (!validOB)
+        return sig;
+
+    // ==== BUY Multi-level OB ====
+    if (trendTF1 == DIR_BUY && trendTF2 == DIR_BUY && CheckLiquiditySweep(true, idxHi, idxLo) && CheckBOS(true, idxHi, idxLo))
     {
         for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = demand + lvl * levelStep;
             if (price >= levelPrice - spread && price <= levelPrice + spread)
             {
+                // Konfirmasi PA: engulfing bullish
+                double open1 = iOpen(_Symbol, OB_TF1, 1);
+                double close1 = iClose(_Symbol, OB_TF1, 1);
+                double open2 = iOpen(_Symbol, OB_TF1, 2);
+                double close2 = iClose(_Symbol, OB_TF1, 2);
+
+                // Bullish engulfing = candle 1 bullish dan menutup lebih tinggi dari candle 2
+                if (!(close1 > open1 && close1 > close2 && close2 < open2))
+                    return sig;
+
                 sig.signal = DIR_BUY;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-                sig.stopLoss = demand - pointSize * 5;
-                sig.takeProfit = supply;
+                sig.stopLoss = demand - atr;
+                sig.takeProfit = supply + atr;
                 sig.lotSize = baseLot * lvl;
                 sig.isStrong = (lvl == 1);
 
-                // Proteksi tambahan: override jika isStrong dan diizinkan
                 if (sig.isStrong && allowStrongOverride)
                 {
                     double maxAllowedLot = RiskManager::GetMaxLot();
                     if (sig.lotSize > maxAllowedLot)
-                        sig.lotSize = maxAllowedLot; // tetap aman
+                        sig.lotSize = maxAllowedLot;
                 }
-
                 break;
             }
         }
     }
 
-    //==== SELL Multi-level OB ====
-    if (trendTF1 == DIR_SELL && trendTF2 == DIR_SELL)
+    // ==== SELL Multi-level OB ====
+    if (trendTF1 == DIR_SELL && trendTF2 == DIR_SELL && CheckLiquiditySweep(false, idxHi, idxLo) && CheckBOS(false, idxHi, idxLo))
     {
         for (int lvl = 1; lvl <= levels; lvl++)
         {
             double levelPrice = supply - lvl * levelStep;
             if (price <= levelPrice + spread && price >= levelPrice - spread)
             {
+                // Konfirmasi PA: engulfing bearish
+                double open1 = iOpen(_Symbol, OB_TF1, 1);
+                double close1 = iClose(_Symbol, OB_TF1, 1);
+                double open2 = iOpen(_Symbol, OB_TF1, 2);
+                double close2 = iClose(_Symbol, OB_TF1, 2);
+
+                // Bearish engulfing = candle 1 bearish dan menutup lebih rendah dari candle 2
+                if (!(close1 < open1 && close1 < close2 && close2 > open2))
+                    return sig;
+
                 sig.signal = DIR_SELL;
                 sig.entryPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-                sig.stopLoss = supply + pointSize * 5;
-                sig.takeProfit = demand;
+                sig.stopLoss = supply + atr;
+                sig.takeProfit = demand - atr;
                 sig.lotSize = baseLot * lvl;
                 sig.isStrong = (lvl == 1);
 
-                // Proteksi tambahan: override jika isStrong dan diizinkan
                 if (sig.isStrong && allowStrongOverride)
                 {
                     double maxAllowedLot = RiskManager::GetMaxLot();
                     if (sig.lotSize > maxAllowedLot)
-                        sig.lotSize = maxAllowedLot; // tetap aman
+                        sig.lotSize = maxAllowedLot;
                 }
-
                 break;
             }
         }
     }
-
     return sig;
 }
 
@@ -4864,15 +5109,15 @@ void ExecuteSMCTrade(SMCSignal &smcSignal)
 //+------------------------------------------------------------------+
 //| Stochastic Ultimate Parameters                                  |
 //+------------------------------------------------------------------+
-input bool UseStochastic = true;                 // Aktifkan stochastic detection
-input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_M15;  // Timeframe rendah untuk entry
-input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_M30; // Timeframe tinggi untuk konfirmasi
-input int Stoch_KPeriod = 14;                    // %K period
-input int Stoch_DPeriod = 3;                     // %D period
-input int Stoch_Slowing = 3;                     // Slowing period
-input int Stoch_EMAPeriod = 50;                  // EMA period untuk trend filter
-input double Stoch_ATR_Multiplier = 3.5;         // ATR multiplier untuk SL
-input double Stoch_TrailFactor = 1.0;            // Trailing stop factor
+input bool UseStochastic = true;                // Aktifkan stochastic detection
+input ENUM_TIMEFRAMES Stoch_TFLow = PERIOD_H1;  // Timeframe rendah untuk entry
+input ENUM_TIMEFRAMES Stoch_TFHigh = PERIOD_H4; // Timeframe tinggi untuk konfirmasi
+input int Stoch_KPeriod = 14;                   // %K period
+input int Stoch_DPeriod = 3;                    // %D period
+input int Stoch_Slowing = 3;                    // Slowing period
+input int Stoch_EMAPeriod = 50;                 // EMA period untuk trend filter
+input double Stoch_ATR_Multiplier = 3.5;        // ATR multiplier untuk SL
+input double Stoch_TrailFactor = 1.0;           // Trailing stop factor
 
 //==================================================================
 // Fungsi Stochastic Ultimate Advanced (Multi-TF + Trend Filter + ATR SL/TP)
@@ -5000,7 +5245,6 @@ StochSignal GetStochasticSignalUltimateAdvanced(ENUM_TIMEFRAMES tfLow,
 
     return sig;
 }
-
 
 //==================================================================
 // Fungsi Execute Stochastic Trade
@@ -6164,12 +6408,12 @@ bool PBX_GetOHLC(string sym, ENUM_TIMEFRAMES tf, int count,
     ArrayResize(h, count);
     ArrayResize(l, count);
     ArrayResize(c, count);
-    
+
     ArraySetAsSeries(o, true);
     ArraySetAsSeries(h, true);
     ArraySetAsSeries(l, true);
     ArraySetAsSeries(c, true);
-    
+
     if (CopyOpen(sym, tf, 0, count, o) <= 0)
         return false;
     if (CopyHigh(sym, tf, 0, count, h) <= 0)
@@ -6221,14 +6465,15 @@ bool PBX_CheckTrend(string sym, ENUM_TIMEFRAMES tf, int period, int signal)
 {
     double ema = PBX_GetEMA(sym, tf, period, 1); // EMA dari bar sebelumnya
     double currentPrice = SymbolInfoDouble(sym, SYMBOL_BID);
-    
-    if (ema == 0) return false; // EMA tidak valid
-    
+
+    if (ema == 0)
+        return false; // EMA tidak valid
+
     if (signal == PBX_BUY)
         return currentPrice > ema; // Hanya buy di atas EMA
     else if (signal == PBX_SELL)
         return currentPrice < ema; // Hanya sell di bawah EMA
-    
+
     return false;
 }
 
@@ -6237,55 +6482,58 @@ double PBX_CalculateLotSize(double slDistance)
 {
     if (!PBX_UseMoneyManagement)
         return PBX_FixedLotSize;
-    
+
     double accountBalance = AccountInfoDouble(ACCOUNT_BALANCE);
     double riskAmount = accountBalance * PBX_RiskPercent / 100.0;
     double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
     double pointValue = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-    
+
     if (slDistance <= 0 || tickValue <= 0 || pointValue <= 0)
         return PBX_FixedLotSize;
-    
+
     double lotSize = riskAmount / (slDistance * tickValue / pointValue);
-    
+
     // Validasi lot size
     double minLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
     double maxLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
     double stepLot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-    
+
     lotSize = MathMax(lotSize, minLot);
     lotSize = MathMin(lotSize, maxLot);
     lotSize = MathRound(lotSize / stepLot) * stepLot;
-    
+
     return NormalizeDouble(lotSize, 2);
 }
 
 // ================== Engulfing ==================
 bool PBX_BullishEngulf(int sh, const double &o[], const double &c[])
 {
-    if (sh + 1 >= ArraySize(o)) return false;
+    if (sh + 1 >= ArraySize(o))
+        return false;
     return (c[sh] > o[sh] && c[sh + 1] < o[sh + 1] && c[sh] >= o[sh + 1] && o[sh] <= c[sh + 1]);
 }
 
 bool PBX_BearishEngulf(int sh, const double &o[], const double &c[])
 {
-    if (sh + 1 >= ArraySize(o)) return false;
+    if (sh + 1 >= ArraySize(o))
+        return false;
     return (c[sh] < o[sh] && c[sh + 1] > o[sh + 1] && o[sh] >= c[sh + 1] && c[sh] <= o[sh + 1]);
 }
 
 // ================== Pin Bar ==================
 bool PBX_IsPinBar(int sh, const double &o[], const double &h[], const double &l[], const double &c[], bool &bull)
 {
-    if (sh >= ArraySize(o)) return false;
-    
+    if (sh >= ArraySize(o))
+        return false;
+
     double body = MathAbs(c[sh] - o[sh]);
     double rng = h[sh] - l[sh];
     if (rng <= 0)
         return false;
-    
+
     double up = h[sh] - MathMax(o[sh], c[sh]);
     double down = MathMin(o[sh], c[sh]) - l[sh];
-    
+
     if (body <= rng * PBX_PinBarBodyMax && down >= rng * PBX_PinBarTailMin)
     {
         bull = true;
@@ -6304,14 +6552,16 @@ void PBX_GetSwingHL(const double &h[], const double &l[], int lookback, double &
 {
     if (ArraySize(h) < lookback || ArraySize(l) < lookback)
         return;
-        
+
     swingHigh = h[1];
     swingLow = l[1];
-    
+
     for (int i = 2; i <= lookback && i < ArraySize(h); i++)
     {
-        if (h[i] > swingHigh) swingHigh = h[i];
-        if (l[i] < swingLow) swingLow = l[i];
+        if (h[i] > swingHigh)
+            swingHigh = h[i];
+        if (l[i] < swingLow)
+            swingLow = l[i];
     }
 }
 
@@ -6324,11 +6574,11 @@ PBX_SignalResult PBX_DetectSignal()
     r.entry = 0;
     r.fibo50 = 0;
     r.fibo618 = 0;
-    
+
     double o[], h[], l[], c[];
     if (!PBX_GetOHLC(_Symbol, PBX_Timeframe, PBX_LookbackBars, o, h, l, c))
         return r;
-    
+
     int sh = PBX_CheckBarShift;
     if (sh >= ArraySize(o) || sh + 1 >= ArraySize(o))
         return r;
@@ -6340,7 +6590,7 @@ PBX_SignalResult PBX_DetectSignal()
 
     double H, L;
     PBX_GetSwingHL(h, l, PBX_SwingLookback, H, L);
-    
+
     // PERBAIKAN PENTING: Fibonacci calculation yang benar
     r.fibo50 = L + (H - L) * 0.50;   // 50% retracement dari bawah
     r.fibo618 = L + (H - L) * 0.618; // 61.8% retracement dari bawah
@@ -6349,8 +6599,8 @@ PBX_SignalResult PBX_DetectSignal()
     r.entry = c[sh];
 
     // PERBAIKAN: Kondisi Buy yang benar (mendekati level support)
-    if ((bullEng || (pin && isBullPin)) && 
-        r.entry <= r.fibo50 + PBX_FiboTol && 
+    if ((bullEng || (pin && isBullPin)) &&
+        r.entry <= r.fibo50 + PBX_FiboTol &&
         r.entry >= r.fibo618 - PBX_FiboTol)
     {
         if (PBX_CheckTrend(_Symbol, PBX_Timeframe, PBX_EMA_Period, PBX_BUY))
@@ -6359,10 +6609,10 @@ PBX_SignalResult PBX_DetectSignal()
             r.sl = r.entry - atr * PBX_ATR_MultSL;
         }
     }
-    
+
     // PERBAIKAN: Kondisi Sell yang benar (mendekati level resistance)
-    if ((bearEng || (pin && !isBullPin)) && 
-        r.entry >= r.fibo50 - PBX_FiboTol && 
+    if ((bearEng || (pin && !isBullPin)) &&
+        r.entry >= r.fibo50 - PBX_FiboTol &&
         r.entry <= r.fibo618 + PBX_FiboTol)
     {
         if (PBX_CheckTrend(_Symbol, PBX_Timeframe, PBX_EMA_Period, PBX_SELL))
@@ -6371,7 +6621,7 @@ PBX_SignalResult PBX_DetectSignal()
             r.sl = r.entry + atr * PBX_ATR_MultSL;
         }
     }
-    
+
     return r;
 }
 
@@ -6416,7 +6666,8 @@ void PBX_TrailingSLHandler()
 
         // Cek magic number untuk pastikan ini posisi EA kita
         long magic = PositionGetInteger(POSITION_MAGIC);
-        if (magic != 12345) continue;
+        if (magic != 12345)
+            continue;
 
         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
         double currentSL = PositionGetDouble(POSITION_SL);
@@ -6455,33 +6706,33 @@ void PBX_OpenPosition(const PBX_SignalResult &signal)
 {
     double slDistance = MathAbs(signal.entry - signal.sl);
     double lotSize = PBX_CalculateLotSize(slDistance);
-    
+
     // Validasi lot size akhir
-    if (lotSize > 2.0) 
+    if (lotSize > 2.0)
     {
         Print("⚠️ Lot size too large: ", lotSize, " Using fixed lot 0.1");
         lotSize = 0.1;
     }
-    
+
     MqlTradeRequest request;
     MqlTradeResult result;
     ZeroMemory(request);
     ZeroMemory(result);
-    
+
     request.action = TRADE_ACTION_DEAL;
     request.symbol = _Symbol;
     request.volume = lotSize;
     request.type = (signal.signal == PBX_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-    request.price = (signal.signal == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) 
-                                              : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    request.price = (signal.signal == PBX_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK)
+                                               : SymbolInfoDouble(_Symbol, SYMBOL_BID);
     request.sl = signal.sl;
     request.deviation = 10;
     request.magic = 12345;
     request.comment = "PBX Strategy v2.2";
-    
+
     if (OrderSend(request, result))
     {
-        Print("✅ Order opened: ", result.order, " Lot: ", lotSize, " Type: ", 
+        Print("✅ Order opened: ", result.order, " Lot: ", lotSize, " Type: ",
               (signal.signal == PBX_BUY ? "BUY" : "SELL"));
     }
     else
@@ -6607,62 +6858,61 @@ void TLB_DetectTrendlines()
     }
 }
 
-//--- Deteksi breakout dan retest
+//--- Deteksi breakout dan retest (versi diperbarui)
 void TLB_DetectBreakouts()
 {
-    double closePrice = iClose(_Symbol, TLB_Timeframe, 1);   // pakai candle sebelumnya
-    double currentPrice = iClose(_Symbol, TLB_Timeframe, 0); // candle sekarang
+    double closePrev = iClose(_Symbol, TLB_Timeframe, 1); // close candle sebelumnya
+    double closeNow = iClose(_Symbol, TLB_Timeframe, 0);  // close candle saat ini
+    double lowPrev = iLow(_Symbol, TLB_Timeframe, 1);
+    double highPrev = iHigh(_Symbol, TLB_Timeframe, 1);
 
     for (int i = 0; i < TLB_LineCount; i++)
     {
-        // akses by reference supaya update struct
+        // akses struct pakai reference agar update langsung
         TLB_Line line = TLB_Lines[i];
 
+        // hitung posisi garis saat ini
         double linePriceNow = line.price1 +
                               (line.price2 - line.price1) * (TimeCurrent() - line.time1) / (line.time2 - line.time1);
 
-        // --- STEP 1: Breakout detection (hanya tandai)
+        // =============================
+        // STEP 1: Deteksi breakout
+        // =============================
         if (!line.triggered)
         {
-            if (!line.isHighLine && closePrice > linePriceNow)
+            if (!line.isHighLine && closePrev > linePriceNow) // breakout atas support
             {
                 line.triggered = true;
                 TLB_DrawBreakoutMarker(true, linePriceNow, TimeCurrent());
+                Print("📊 Breakout Support terdeteksi, menunggu retest BUY.");
             }
-            if (line.isHighLine && closePrice < linePriceNow)
+            else if (line.isHighLine && closePrev < linePriceNow) // breakout bawah resistance
             {
                 line.triggered = true;
                 TLB_DrawBreakoutMarker(false, linePriceNow, TimeCurrent());
+                Print("📊 Breakout Resistance terdeteksi, menunggu retest SELL.");
             }
         }
 
-        // --- STEP 2: Retest setelah breakout
+        // =============================
+        // STEP 2: Tunggu Retest
+        // =============================
         if (line.triggered && !line.retested)
         {
-            // cek apakah candle terakhir menyentuh garis (retest)
-            double low = iLow(_Symbol, TLB_Timeframe, 1);
-            double high = iHigh(_Symbol, TLB_Timeframe, 1);
-
-            if (!line.isHighLine && low <= linePriceNow) // support di-retest
+            // retest valid jika harga candle berikut menyentuh garis
+            if (!line.isHighLine && lowPrev <= linePriceNow && closeNow > linePriceNow)
             {
-                // entry BUY jika candle berikutnya close di atas
-                if (currentPrice > linePriceNow)
-                {
-                    line.retested = true;
-                    TLB_DrawRetestMarker(true, currentPrice, TimeCurrent());
-                    TLB_EnterTrade(true, currentPrice);
-                }
+                line.retested = true;
+                TLB_DrawRetestMarker(true, closeNow, TimeCurrent());
+                Print("✅ Retest valid di support. Sinyal BUY dikonfirmasi.");
+                TLB_EnterTrade(true, closeNow); // entry BUY
             }
-
-            if (line.isHighLine && high >= linePriceNow) // resistance di-retest
+            else if (line.isHighLine && highPrev >= linePriceNow && closeNow < linePriceNow)
             {
-                // entry SELL jika candle berikutnya close di bawah
-                if (currentPrice < linePriceNow)
-                {
-                    line.retested = true;
-                    TLB_DrawRetestMarker(false, currentPrice, TimeCurrent());
-                    TLB_EnterTrade(false, currentPrice);
-                }
+                line.retested = true;
+                TLB_DrawRetestMarker(false, closeNow, TimeCurrent());
+                Print("✅ Retest valid di resistance. Sinyal SELL dikonfirmasi.");
+                TLB_EnterTrade(false, closeNow); // entry SELL
             }
         }
     }
@@ -6727,17 +6977,29 @@ void TLB_EnterTrade(bool isBuy, double price)
         return;
     // ========================================
 
+    // --- Hitung Stop Loss ATR ---
     double atrSL = TLB_ATRTrailingSL(isBuy);
     int slPips = (int)MathAbs((price - atrSL) / _Point);
+
+    // --- Hitung Take Profit berdasarkan RRR multiplier ---
+    // Jika multiplier = 2.0, artinya RRR = 1:2
     int tpPips = (int)(slPips * TLB_TP_Multiplier);
 
+    // --- Tentukan Lot ---
     double lot = 0.01;
     string signalSource = "Trend Lines Break";
 
+    // --- Eksekusi Order ---
     if (isBuy)
+    {
         ExecuteBuy(lot, slPips, tpPips, signalSource);
+        PrintFormat("📈 BUY di %.2f | SL = %d pips | TP = %d pips", price, slPips, tpPips);
+    }
     else
+    {
         ExecuteSell(lot, slPips, tpPips, signalSource);
+        PrintFormat("📉 SELL di %.2f | SL = %d pips | TP = %d pips", price, slPips, tpPips);
+    }
 }
 
 //--- Panel info floating
@@ -6806,7 +7068,7 @@ bool DetectHighProbSignal(ENUM_TIMEFRAMES timeFrame,
                           int atrPeriod = 14,
                           double minADX = 25.0,
                           double minConfidenceForSignal = 60.0,
-                          double rr = 2.0) 
+                          double rr = 2.0)
 {
     outDirection = DIR_NONE;
     outEntryPrice = outSL = outTP = 0.0;
@@ -6814,12 +7076,13 @@ bool DetectHighProbSignal(ENUM_TIMEFRAMES timeFrame,
 
     // --- index shifts (past bars must exist)
     int shift = barsShift;
-    if(shift < 1) shift = 1; // gunakan bar tertutup terakhir sebagai standar
+    if (shift < 1)
+        shift = 1; // gunakan bar tertutup terakhir sebagai standar
 
     // --- ambil nilai indikator
     double ema = iMA(_Symbol, timeFrame, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
     double priceClose = iClose(_Symbol, timeFrame, shift);
-    double priceOpen  = iOpen(_Symbol, timeFrame, shift);
+    double priceOpen = iOpen(_Symbol, timeFrame, shift);
     double bbUpper = iBands(_Symbol, timeFrame, bbPeriod, (int)bbStdDev, 0, PRICE_CLOSE);
     double bbMiddle = iBands(_Symbol, timeFrame, bbPeriod, (int)bbStdDev, 0, PRICE_CLOSE);
     double bbLower = iBands(_Symbol, timeFrame, bbPeriod, (int)bbStdDev, 0, PRICE_CLOSE);
@@ -6830,7 +7093,7 @@ bool DetectHighProbSignal(ENUM_TIMEFRAMES timeFrame,
     double contractDigits = (double)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
 
     // Cek validitas data
-    if(ema==EMPTY_VALUE || bbUpper==EMPTY_VALUE || rsi==EMPTY_VALUE || adx==EMPTY_VALUE || atr==EMPTY_VALUE)
+    if (ema == EMPTY_VALUE || bbUpper == EMPTY_VALUE || rsi == EMPTY_VALUE || adx == EMPTY_VALUE || atr == EMPTY_VALUE)
         return false;
 
     // --- scoring sederhana: bobot tiap indikator
@@ -6842,102 +7105,159 @@ bool DetectHighProbSignal(ENUM_TIMEFRAMES timeFrame,
     // 1) EMA alignment (trend filter)
     // jika close > ema => dukung BUY; close < ema => dukung SELL
     int emaBias = 0;
-    if(priceClose > ema) { emaBias = 1; score += 25.0; }
-    else if(priceClose < ema) { emaBias = -1; score += 25.0; }
+    if (priceClose > ema)
+    {
+        emaBias = 1;
+        score += 25.0;
+    }
+    else if (priceClose < ema)
+    {
+        emaBias = -1;
+        score += 25.0;
+    }
 
     // 2) RSI momentum
     // strong buy if RSI > 50 and rising; strong sell if RSI < 50 and falling
     // periksa perubahan RSI (shift vs shift+1)
     double rsiPrev = iRSI(_Symbol, timeFrame, rsiPeriod, PRICE_CLOSE);
-    if(rsiPrev==EMPTY_VALUE) rsiPrev = rsi;
-    if(rsi > 50 && rsi > rsiPrev) { score += 20.0; }         // mendukung BUY
-    else if(rsi < 50 && rsi < rsiPrev) { score += 20.0; }    // mendukung SELL
+    if (rsiPrev == EMPTY_VALUE)
+        rsiPrev = rsi;
+    if (rsi > 50 && rsi > rsiPrev)
+    {
+        score += 20.0;
+    } // mendukung BUY
+    else if (rsi < 50 && rsi < rsiPrev)
+    {
+        score += 20.0;
+    } // mendukung SELL
     // penalti kecil kalau RSI ekstrem berlawanan (e.g., terlalu overbought saat buy)
-    if(rsi > 80) score -= 5.0;
-    if(rsi < 20) score -= 5.0;
+    if (rsi > 80)
+        score -= 5.0;
+    if (rsi < 20)
+        score -= 5.0;
 
     // 3) ADX strength
-    if(adx >= minADX) score += 20.0; // trend cukup kuat
-    else score += (adx / minADX) * 10.0; // partial support
+    if (adx >= minADX)
+        score += 20.0; // trend cukup kuat
+    else
+        score += (adx / minADX) * 10.0; // partial support
 
     // 4) BB breakout / touch
     // jika priceClose > bbUpper -> breakout atas (buy); if priceClose < bbLower -> breakout bawah (sell)
-    if(priceClose > bbUpper) score += 20.0;
-    else if(priceClose < bbLower) score += 20.0;
-    else {
+    if (priceClose > bbUpper)
+        score += 20.0;
+    else if (priceClose < bbLower)
+        score += 20.0;
+    else
+    {
         // jika mantul dari middle band ke atas/bawah, berikan sebagian score
-        if(priceClose > bbMiddle && priceOpen < bbMiddle) score += 10.0; // mantul ke atas
-        if(priceClose < bbMiddle && priceOpen > bbMiddle) score += 10.0; // mantul ke bawah
+        if (priceClose > bbMiddle && priceOpen < bbMiddle)
+            score += 10.0; // mantul ke atas
+        if (priceClose < bbMiddle && priceOpen > bbMiddle)
+            score += 10.0; // mantul ke bawah
     }
 
     // 5) candle confirmation (momentum candle)
     // jika candle body besar (relative terhadap ATR) -> konfirmasi
     double candleBody = MathAbs(priceClose - priceOpen);
-    if(atr > 0.0) {
+    if (atr > 0.0)
+    {
         double rel = candleBody / atr;
-        if(rel >= 0.5) score += 10.0;        // body cukup signifikan
-        else if(rel >= 0.2) score += 5.0;
+        if (rel >= 0.5)
+            score += 10.0; // body cukup signifikan
+        else if (rel >= 0.2)
+            score += 5.0;
     }
 
     // Normalisasi skor ke 0..100 dan bounded
-    if(score < 0.0) score = 0.0;
-    if(score > scoreMax) score = scoreMax;
+    if (score < 0.0)
+        score = 0.0;
+    if (score > scoreMax)
+        score = scoreMax;
     outConfidence = score;
 
     // --- Tentukan arah akhir berdasarkan kombinasi sinyal (majoritas indikator)
     // Count votes: emaBias, rsi direction, bb breakout direction, candle direction
     int voteBuy = 0, voteSell = 0;
-    if(emaBias > 0) voteBuy++; else if(emaBias < 0) voteSell++;
+    if (emaBias > 0)
+        voteBuy++;
+    else if (emaBias < 0)
+        voteSell++;
 
-    if(rsi > 50 && rsi > rsiPrev) voteBuy++; else if(rsi < 50 && rsi < rsiPrev) voteSell++;
+    if (rsi > 50 && rsi > rsiPrev)
+        voteBuy++;
+    else if (rsi < 50 && rsi < rsiPrev)
+        voteSell++;
 
-    if(priceClose > bbUpper) voteBuy++; else if(priceClose < bbLower) voteSell++;
-    else {
-        if(priceClose > bbMiddle && priceOpen < bbMiddle) voteBuy++;
-        if(priceClose < bbMiddle && priceOpen > bbMiddle) voteSell++;
+    if (priceClose > bbUpper)
+        voteBuy++;
+    else if (priceClose < bbLower)
+        voteSell++;
+    else
+    {
+        if (priceClose > bbMiddle && priceOpen < bbMiddle)
+            voteBuy++;
+        if (priceClose < bbMiddle && priceOpen > bbMiddle)
+            voteSell++;
     }
 
     // candle direction
-    if(priceClose > priceOpen) voteBuy++; else if(priceClose < priceOpen) voteSell++;
+    if (priceClose > priceOpen)
+        voteBuy++;
+    else if (priceClose < priceOpen)
+        voteSell++;
 
     // ADX tidak memberikan arah, hanya kekuatan. Tetapi jika ADX tinggi dan votes konsisten, kuatkan confidence
     // Tentukan direction final
-    if(voteBuy > voteSell && outConfidence >= minConfidenceForSignal) outDirection = DIR_BUY;
-    else if(voteSell > voteBuy && outConfidence >= minConfidenceForSignal) outDirection = DIR_SELL;
-    else {
+    if (voteBuy > voteSell && outConfidence >= minConfidenceForSignal)
+        outDirection = DIR_BUY;
+    else if (voteSell > voteBuy && outConfidence >= minConfidenceForSignal)
+        outDirection = DIR_SELL;
+    else
+    {
         // kalau skor sangat tinggi dan votes seimbang, masih coba arah sesuai EMA
-        if(outConfidence >= (minConfidenceForSignal + 10.0)) {
-            if(emaBias > 0) outDirection = DIR_BUY;
-            else if(emaBias < 0) outDirection = DIR_SELL;
-        } else {
+        if (outConfidence >= (minConfidenceForSignal + 10.0))
+        {
+            if (emaBias > 0)
+                outDirection = DIR_BUY;
+            else if (emaBias < 0)
+                outDirection = DIR_SELL;
+        }
+        else
+        {
             outDirection = DIR_NONE;
             return false;
         }
     }
 
     // --- Hitung entry price, SL, TP berdasarkan ATR untuk mengakomodasi volatilitas
-    double slPips = MathMax( (atr * 1.0), tickSize * 10 ); // minimal atribut
+    double slPips = MathMax((atr * 1.0), tickSize * 10); // minimal atribut
     // Round ke digits symbol
     double slPrice, tpPrice, entryPrice;
 
-    if(outDirection == DIR_BUY) {
+    if (outDirection == DIR_BUY)
+    {
         // entry: market/atau breakout level (boleh disesuaikan)
-        entryPrice = iClose(_Symbol, timeFrame, shift-1); // rekomendasi: next candle open/market
-        slPrice = entryPrice - (slPips * 1.1); // SL sedikit lebih lebar
-        tpPrice = entryPrice + ( (slPrice < entryPrice) ? ( (entryPrice - slPrice) * rr ) : (atr * rr) );
+        entryPrice = iClose(_Symbol, timeFrame, shift - 1); // rekomendasi: next candle open/market
+        slPrice = entryPrice - (slPips * 1.1);              // SL sedikit lebih lebar
+        tpPrice = entryPrice + ((slPrice < entryPrice) ? ((entryPrice - slPrice) * rr) : (atr * rr));
 
         // jika closing di luar upper band, gunakan upper band + small buffer sebagai entry
-        if(priceClose > bbUpper) {
+        if (priceClose > bbUpper)
+        {
             entryPrice = NormalizeDouble(priceClose, (int)contractDigits);
             slPrice = NormalizeDouble(bbMiddle, (int)contractDigits); // SL ke middle band safer
             tpPrice = NormalizeDouble(entryPrice + (MathAbs(entryPrice - slPrice) * rr), (int)contractDigits);
         }
-    } else { // SELL
-        entryPrice = iClose(_Symbol, timeFrame, shift-1);
+    }
+    else
+    { // SELL
+        entryPrice = iClose(_Symbol, timeFrame, shift - 1);
         slPrice = entryPrice + (slPips * 1.1);
-        tpPrice = entryPrice - ( (slPrice > entryPrice) ? ( (slPrice - entryPrice) * rr ) : (atr * rr) );
+        tpPrice = entryPrice - ((slPrice > entryPrice) ? ((slPrice - entryPrice) * rr) : (atr * rr));
 
-        if(priceClose < bbLower) {
+        if (priceClose < bbLower)
+        {
             entryPrice = NormalizeDouble(priceClose, (int)contractDigits);
             slPrice = NormalizeDouble(bbMiddle, (int)contractDigits);
             tpPrice = NormalizeDouble(entryPrice - (MathAbs(entryPrice - slPrice) * rr), (int)contractDigits);
@@ -6950,9 +7270,12 @@ bool DetectHighProbSignal(ENUM_TIMEFRAMES timeFrame,
     outTP = NormalizeDouble(tpPrice, (int)contractDigits);
 
     // Safety check: ensure SL/TP valid
-    if(outTP == outEntryPrice || outSL == outEntryPrice) return false;
-    if(outDirection == DIR_BUY && outTP <= outEntryPrice) return false;
-    if(outDirection == DIR_SELL && outTP >= outEntryPrice) return false;
+    if (outTP == outEntryPrice || outSL == outEntryPrice)
+        return false;
+    if (outDirection == DIR_BUY && outTP <= outEntryPrice)
+        return false;
+    if (outDirection == DIR_SELL && outTP >= outEntryPrice)
+        return false;
 
     // Final: jika confidence cukup tinggi, return true
     return (outConfidence >= minConfidenceForSignal);
@@ -6978,9 +7301,9 @@ bool ExecuteTIER_ADX_RSI_BB()
     bool signal = DetectHighProbSignal(tf, barsShift, gDirection, gEntryPrice, gSL, gTP, gConfidence);
 
     // Cek validitas sinyal
-    if(signal && gConfidence >= minConfidence && gDirection != DIR_NONE)
+    if (signal && gConfidence >= minConfidence && gDirection != DIR_NONE)
     {
-        Print("✅ High probability signal detected! Direction=", (gDirection==DIR_BUY?"BUY":"SELL"),
+        Print("✅ High probability signal detected! Direction=", (gDirection == DIR_BUY ? "BUY" : "SELL"),
               " Entry=", gEntryPrice, " SL=", gSL, " TP=", gTP,
               " Confidence=", gConfidence);
         return true;
@@ -6992,34 +7315,210 @@ bool ExecuteTIER_ADX_RSI_BB()
     }
 }
 
-
-
 void EksekusiTier_ADX_RSI_BB(ENUM_TIMEFRAMES tf, int barsShift,
-                      Dir &outDirection,
-                      double &outEntryPrice,
-                      double &outSL,
-                      double &outTP,
-                      double &outConfidence,
-                      double minConfidence = 60.0)
+                             Dir &outDirection,
+                             double &outEntryPrice,
+                             double &outSL,
+                             double &outTP,
+                             double &outConfidence,
+                             double minConfidence = 60.0)
 {
     // --- Panggil fungsi deteksi sinyal
     bool signal = DetectHighProbSignal(tf, barsShift, outDirection, outEntryPrice, outSL, outTP, outConfidence);
 
-    if(!signal || outDirection == DIR_NONE)
+    if (!signal || outDirection == DIR_NONE)
     {
         Print("❌ No valid high-probability signal detected. Confidence=", outConfidence);
         return;
     }
-    
+
     double lot = 0.1; // bisa disesuaikan atau dibuat otomatis sesuai risk
 
     // --- Eksekusi order sesuai arah sinyal
-    if(outDirection == DIR_BUY)
+    if (outDirection == DIR_BUY)
     {
-        ExecuteBuy(lot, (int)outSL, (int)outTP, "ADX_RSI_BB [Confidence=" + DoubleToString(outConfidence,1) + "]");
+        ExecuteBuy(lot, (int)outSL, (int)outTP, "ADX_RSI_BB [Confidence=" + DoubleToString(outConfidence, 1) + "]");
     }
-    else if(outDirection == DIR_SELL)
+    else if (outDirection == DIR_SELL)
     {
-        ExecuteSell(lot, (int)outSL, (int)outTP, "ADX_RSI_BB [Confidence=" + DoubleToString(outConfidence,1) + "]");
+        ExecuteSell(lot, (int)outSL, (int)outTP, "ADX_RSI_BB [Confidence=" + DoubleToString(outConfidence, 1) + "]");
     }
+}
+
+//+------------------------------------------------------------------+
+//| Struct hasil deteksi per pair S N R PRICE ACTION                  |
+//+------------------------------------------------------------------+
+struct SRSignal
+{
+    string symbol; // nama pair
+    bool buy;
+    bool sell;
+    double level;
+    double sl;
+    double tp;
+};
+
+//+------------------------------------------------------------------+
+//| Fungsi deteksi SR+PA per pair                                     |
+//+------------------------------------------------------------------+
+SRSignal DetectSRSignalSingle(
+    string symbol,
+    ENUM_TIMEFRAMES tfEntry = PERIOD_M5,
+    ENUM_TIMEFRAMES tfMid = PERIOD_M15,
+    ENUM_TIMEFRAMES tfHigh = PERIOD_H1,
+    int emaPeriod = 200,
+    int lookback = 50,
+    double bufferFactor = 0.2,
+    double wickFactor = 0.3,
+    double tpMultiplier = 3.0)
+{
+    SRSignal signal;
+    signal.symbol = symbol;
+    signal.buy = false;
+    signal.sell = false;
+
+    double highArr[], lowArr[];
+    int barsAvailable = iBars(symbol, tfEntry);
+    if (lookback > barsAvailable)
+        lookback = barsAvailable;
+
+    ArrayResize(highArr, lookback);
+    ArrayResize(lowArr, lookback);
+    ArraySetAsSeries(highArr, true);
+    ArraySetAsSeries(lowArr, true);
+
+    int copiedHigh = CopyHigh(symbol, tfEntry, 0, lookback, highArr);
+    int copiedLow = CopyLow(symbol, tfEntry, 0, lookback, lowArr);
+
+    if (copiedHigh <= 0 || copiedLow <= 0)
+    {
+        Print("❌ Failed to copy price data for ", symbol);
+        return signal;
+    }
+
+    double resistance = -1, support = -1;
+    for (int i = 1; i < lookback - 1; i++)
+    {
+        if (highArr[i] > highArr[i - 1] && highArr[i] > highArr[i + 1])
+            resistance = highArr[i];
+        if (lowArr[i] < lowArr[i - 1] && lowArr[i] < lowArr[i + 1])
+            support = lowArr[i];
+    }
+
+    double price = iClose(symbol, tfEntry, 0);
+    double open = iOpen(symbol, tfEntry, 0);
+    double high = iHigh(symbol, tfEntry, 0);
+    double low = iLow(symbol, tfEntry, 0);
+    double buffer = (high - low) * bufferFactor;
+    double wickLower = open - low;
+    double wickUpper = high - open;
+
+    // Multi-timeframe trend confirmation
+    double emaHigh = iMA(symbol, tfHigh, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    double emaMid = iMA(symbol, tfMid, emaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+    double priceHigh = iClose(symbol, tfHigh, 0);
+    double priceMid = iClose(symbol, tfMid, 0);
+
+    bool bullishTrend = priceHigh > emaHigh && priceMid > emaMid;
+    bool bearishTrend = priceHigh < emaHigh && priceMid < emaMid;
+
+    // BUY
+    if (support > 0 && price <= support + buffer && price > open && wickLower >= (high - low) * wickFactor && bullishTrend)
+    {
+        signal.buy = true;
+        signal.level = support;
+        signal.sl = support - buffer;
+        signal.tp = support + buffer * tpMultiplier;
+    }
+
+    // SELL
+    if (resistance > 0 && price >= resistance - buffer && price < open && wickUpper >= (high - low) * wickFactor && bearishTrend)
+    {
+        signal.sell = true;
+        signal.level = resistance;
+        signal.sl = resistance + buffer;
+        signal.tp = resistance - buffer * tpMultiplier;
+    }
+
+    return signal;
+}
+
+//+------------------------------------------------------------------+
+//| Fungsi deteksi SR+PA multi-pair                                   |
+//+------------------------------------------------------------------+
+void DetectSRSignalMulti(
+    string symbolsList, // daftar pair, pisah koma, misal "EURUSD,GBPUSD,USDJPY"
+    SRSignal &signals[] // array hasil
+)
+{
+    string symbols[];
+    int count = StringSplit(symbolsList, ',', symbols);
+    ArrayResize(signals, count);
+
+    for (int i = 0; i < count; i++)
+    {
+        signals[i] = DetectSRSignalSingle(symbols[i]);
+    }
+}
+
+//--- Fungsi konversi SL/TP dari level harga ke pips
+int CalcPips(double priceOpen, double priceSL)
+{
+    double pipValue = (_Digits == 3 || _Digits == 5) ? 0.001 : 0.01; // XAU/JPY dll bisa disesuaikan
+    double pips = MathAbs(priceOpen - priceSL) / pipValue;
+    return (int)MathRound(pips); // gunakan MathRound untuk menghindari loss data
+}
+
+
+//--- Fungsi eksekusi entry multi-pair menggunakan deteksi SR+PA
+void ExecuteSignalsMulti(SRSignal &signals[])
+{
+    for (int i = 0; i < ArraySize(signals); i++)
+    {
+        string sym = signals[i].symbol;
+        double lot = 0.01; // bisa diganti sesuai risk management
+
+        if (signals[i].buy)
+        {
+            int slPips = CalcPips(iClose(sym, PERIOD_M5, 0), signals[i].sl);
+            int tpPips = CalcPips(iClose(sym, PERIOD_M5, 0), signals[i].tp);
+            ExecuteBuy(lot, slPips, tpPips, "SR+PA MultiTimeframe");
+        }
+        if (signals[i].sell)
+        {
+            int slPips = CalcPips(iClose(sym, PERIOD_M5, 0), signals[i].sl);
+            int tpPips = CalcPips(iClose(sym, PERIOD_M5, 0), signals[i].tp);
+            ExecuteSell(lot, slPips, tpPips, "SR+PA MultiTimeframe");
+        }
+    }
+}
+
+bool Tier_SRPA(Dir &outDirection, double &outConfidence, string &outSource)
+{
+    SRSignal allSignals[];
+    string symbolsList = "EURUSD,GBPUSD,USDJPY, NZDUSD, XAUUSD"; // bisa diubah sesuai kebutuhan
+
+    DetectSRSignalMulti(symbolsList, allSignals);
+
+    // Pilih sinyal dengan prioritas BUY > SELL dan SL/TP terbesar (simulasi confidence)
+    double maxBuffer = -1;
+    bool found = false;
+
+    for (int i = 0; i < ArraySize(allSignals); i++)
+    {
+        if (allSignals[i].buy || allSignals[i].sell)
+        {
+            double buffer = MathAbs(allSignals[i].tp - allSignals[i].sl); // simulasi confidence
+            if (buffer > maxBuffer)
+            {
+                maxBuffer = buffer;
+                outDirection = allSignals[i].buy ? DIR_BUY : DIR_SELL;
+                outConfidence = MathMin(1.0, buffer / 50.0); // skala 0-1
+                outSource = "SR+PA:" + allSignals[i].symbol;
+                found = true;
+            }
+        }
+    }
+
+    return found;
 }
